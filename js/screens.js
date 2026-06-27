@@ -1026,6 +1026,8 @@ export function SignIn() {
               <${Icon} name="sparkles" /> ${wStage === 'saving' ? 'Adding you…' : 'Add me to the waitlist'}
             </button>
           </form>`)}
+
+    <p class="dim" style="font-size:11.5px;text-align:center;margin:18px auto 0;max-width:310px;line-height:1.6">📲 <b>Make it an app:</b> open this page in <a href="https://apps.apple.com/us/app/path-browser/id1519521388" target="_blank" rel="noopener" style="color:var(--lilac);border-bottom:1px solid var(--line-2)">Path Browser</a> (free) — or Safari on iPhone — then tap <b>Share → Add to Home Screen</b> for the full-screen experience.</p>
   </div></main></div>`;
 }
 
