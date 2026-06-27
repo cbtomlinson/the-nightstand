@@ -1,0 +1,20 @@
+{
+  "id": "/the-nightstand/",
+  "name": "The Nightstand",
+  "short_name": "Nightstand",
+  "description": "A cozy little book club. Track what you read, get recommendations that actually fit your taste, and read alongside your circle.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#17122b",
+  "theme_color": "#17122b",
+  "categories": ["books", "lifestyle", "social"],
+  "icons": [
+    { "src": "assets/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

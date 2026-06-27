@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>The Nightstand</title>
+  <meta name="description" content="Your personal AI reading advisor — and your friends'." />
+  <meta name="theme-color" content="#17122b" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/icons/icon.svg" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="The Nightstand" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "preact": "./assets/vendor/preact.module.js",
+        "preact/hooks": "./assets/vendor/hooks.module.js",
+        "htm": "./assets/vendor/htm.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="app">
+    <div class="splash">
+      <div class="splash-lamp" aria-hidden="true">
+        <svg viewBox="0 0 64 64" width="76" height="76"><path d="M32 6l5.2 14.8L52 26l-14.8 5.2L32 46l-5.2-14.8L12 26l14.8-5.2z" fill="#e9b85c"/><path d="M50 40l2.4 6.6L59 49l-6.6 2.4L50 58l-2.4-6.6L41 49l6.6-2.4z" fill="#e9b85c"/></svg>
+      </div>
+      <div class="splash-sub">opening the library…</div>
+    </div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+  <script>
+    // Dev mode: no service worker, so the app always loads fresh while we build.
+    // Also removes any previously-registered worker + caches (re-enabled for offline/install at deploy time).
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+    }
+  </script>
+</body>
+</html>
