@@ -37,13 +37,15 @@ export async function getUserEmail() {
 }
 
 // Returns the profile row (only exists for allow-listed members), or null.
-export async function getMyProfile() {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+// Pass a known user id (from the session) to skip an extra getUser() round-trip.
+export async function getMyProfile(userId) {
+  let uid = userId;
+  if (!uid) { const { data: { user } } = await supabase.auth.getUser(); uid = user && user.id; }
+  if (!uid) return null;
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', uid)
     .maybeSingle();
   if (error) {
     console.warn('[auth] profile fetch error:', error.message);

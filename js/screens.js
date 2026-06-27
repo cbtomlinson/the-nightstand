@@ -49,6 +49,36 @@ function AdvisorPaused() {
   </div>`;
 }
 
+/* ---------------- New-user walkthrough ---------------- */
+const TOUR_SLIDES = [
+  { fam: true, title: 'Meet Mabel', body: 'Your reading advisor — a warm, opinionated librarian who learns your taste and recommends books you’ll genuinely love. No spoilers, ever.' },
+  { icon: 'books', title: 'Help me choose', body: 'Torn between books you already have? Mabel interviews you — what you’re in the mood to feel, how hard you want to fall for it — then narrows it down with real reasons. (A favorite around here.)', cta: { label: 'Try “Help me choose”', to: '/choose' } },
+  { icon: 'sparkles', title: 'Consult your advisor', body: 'Tell Mabel your mood and get a few picks tailored to your taste — each with her reasoning and a confidence level.', cta: { label: 'Get a recommendation', to: '/genie' } },
+  { icon: 'star', title: 'Your shelves, your profile', body: 'Track what you’re reading and rate the ones you finish — especially the 5★ and 1★ — and your reading profile sharpens over time.' },
+];
+
+export function Tour({ onClose }) {
+  const brand = getBrand();
+  const [i, setI] = useState(0);
+  const s = TOUR_SLIDES[i];
+  const last = i === TOUR_SLIDES.length - 1;
+  const jump = (to) => { onClose(); go(to); };
+  return html`<div class="tour-overlay" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div class="tour-card">
+      <button class="tour-skip" onClick=${onClose}>Skip</button>
+      <div class=${'tour-icon' + (s.fam ? ' fam' : '')}>${s.fam ? brand.fam.art() : html`<${Icon} name=${s.icon} />`}</div>
+      <div class="tour-title">${s.title}</div>
+      <p class="tour-body">${s.body}</p>
+      ${s.cta ? html`<button class="btn btn-ghost btn-block mt-12" onClick=${() => jump(s.cta.to)}><${Icon} name="arrow" /> ${s.cta.label}</button>` : ''}
+      <div class="tour-dots">${TOUR_SLIDES.map((_, n) => html`<span class=${'tour-dot' + (n === i ? ' on' : '')}></span>`)}</div>
+      <div class="row mt-12" style="gap:8px">
+        ${i > 0 ? html`<button class="btn grow" onClick=${() => setI(i - 1)}>Back</button>` : ''}
+        <button class="btn btn-primary grow" onClick=${() => last ? onClose() : setI(i + 1)}>${last ? 'Start reading' : 'Next'}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ---------------- Shelf (home) ---------------- */
 export function Shelf({ tab: initialTab }) {
   const st = useStore();

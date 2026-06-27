@@ -492,4 +492,18 @@ img { display: block; max-width: 100%; }
 .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 22px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line-2); color: var(--text); padding: 11px 16px; border-radius: var(--pill); font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); z-index: 60; max-width: 88%; animation: fadeUp 0.25s ease both; }
 .toast svg { width: 16px; height: 16px; color: var(--teal); flex: none; }
 
+/* ---------- New-user walkthrough ---------- */
+.tour-overlay { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; padding: 22px; background: rgba(10,7,20,0.66); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); animation: fadeUp 0.2s ease both; }
+.tour-card { width: 100%; max-width: 360px; position: relative; text-align: center; background: var(--bg-1); border: 1px solid var(--line-2); border-radius: var(--r-xl); padding: 26px 22px 20px; box-shadow: var(--shadow); }
+.tour-skip { position: absolute; top: 13px; right: 15px; background: none; border: 0; color: var(--text-3); font-size: 13px; font-weight: 600; cursor: pointer; }
+.tour-icon { width: 64px; height: 64px; margin: 4px auto 14px; border-radius: var(--pill); display: flex; align-items: center; justify-content: center; background: var(--gold-soft); color: var(--gold); }
+.tour-icon svg { width: 30px; height: 30px; }
+.tour-icon.fam { background: radial-gradient(circle, rgba(233,184,92,0.18), transparent 68%); }
+.tour-icon.fam svg { width: 100%; height: 100%; }
+.tour-title { font-family: var(--serif); font-size: 22px; margin-bottom: 8px; }
+.tour-body { color: var(--text-2); font-size: 14px; line-height: 1.55; margin: 0; }
+.tour-dots { display: flex; gap: 6px; justify-content: center; margin-top: 18px; }
+.tour-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--bg-3); transition: background 0.2s, width 0.2s; }
+.tour-dot.on { background: var(--gold); width: 18px; border-radius: 4px; }
+
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }

@@ -6,7 +6,7 @@ import { Icon, Avatar } from './ui.js';
 import { me } from './data.js';
 import { getBrand } from './brand.js';
 import { isConfigured } from './config.js';
-import { getSession, onAuth, getMyProfile, getUserEmail, signOut } from './auth.js';
+import { getSession, onAuth, getMyProfile, signOut } from './auth.js';
 import { init as initStore } from './store.js';
 import * as S from './screens.js';
 import { go } from './screens.js';
@@ -54,6 +54,8 @@ function Shell() {
   const brand = getBrand();
   const { screen, nav, bare } = route(hash);
   const navCls = (k) => 'nav-item' + (nav === k ? ' active' : '');
+  const [showTour, setShowTour] = useState(() => { try { return !localStorage.getItem('rg_tour_seen'); } catch (e) { return false; } });
+  const closeTour = () => { try { localStorage.setItem('rg_tour_seen', '1'); } catch (e) {} setShowTour(false); };
   useEffect(() => { document.title = brand.name; }, [brand.name]);
   useEffect(() => { initStore(); }, []);
 
@@ -81,6 +83,8 @@ function Shell() {
       <button class=${navCls('friends')} onClick=${() => go('/friends')}><${Icon} name="users" /><span>Circle</span></button>
       <button class=${navCls('profile')} onClick=${() => go('/profile')}><${Icon} name="user" /><span>You</span></button>
     </nav>`}
+
+    ${showTour ? html`<${S.Tour} onClose=${closeTour} />` : ''}
   </div>`;
 }
 
@@ -101,20 +105,37 @@ function App() {
       setSt({ loading: false, session: 'local', profile: { local: true }, email: null });
       return;
     }
-    let sub;
-    (async () => {
-      const session = await getSession();
-      const profile = session ? await getMyProfile() : null;
-      const email = session ? await getUserEmail() : null;
-      setSt({ loading: false, session, profile, email });
-      const { data } = onAuth(async (s) => {
-        const profile2 = s ? await getMyProfile() : null;
-        const email2 = s ? await getUserEmail() : null;
-        setSt({ loading: false, session: s, profile: profile2, email: email2 });
-      });
+    let active = true, settled = false, sub;
+
+    // Resolve the auth state from a session (handles initial load + every change).
+    const apply = async (session) => {
+      if (!active) return;
+      settled = true;
+      const email = (session && session.user && session.user.email) || null;
+      let profile = null;
+      try { profile = session ? await getMyProfile(session.user && session.user.id) : null; } catch (_e) {}
+      if (active) setSt({ loading: false, session: session || null, profile, email });
+    };
+
+    // Primary path: the auth listener fires INITIAL_SESSION immediately (no await on
+    // getSession, which is the call that can stall) and then on every later change.
+    try {
+      const { data } = onAuth((session) => { apply(session); });
       sub = data && data.subscription;
+    } catch (_e) {}
+
+    // Backstop in case the listener is slow to deliver the initial session.
+    (async () => {
+      try { const session = await getSession(); if (!settled) apply(session); }
+      catch (_e) { if (!settled) apply(null); }
     })();
-    return () => { try { if (sub) sub.unsubscribe(); } catch (e) {} };
+
+    // Safety net: never sit on the splash forever — fixes the intermittent
+    // "stuck on opening the library, reload to fix" hang. The listener stays live,
+    // so if a session arrives a moment later it still corrects itself.
+    const timer = setTimeout(() => { if (!settled && active) setSt((p) => ({ ...p, loading: false })); }, 6000);
+
+    return () => { active = false; clearTimeout(timer); try { if (sub) sub.unsubscribe(); } catch (_e) {} };
   }, []);
 
   if (st.loading) return html`<${LoadingScreen} />`;
