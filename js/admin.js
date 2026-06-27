@@ -14,4 +14,5 @@ async function call(body) {
 }
 
 export const adminList = () => call({ action: 'list' });
-export const adminAct = (action, userId) => call({ action, userId });
+// args is merged into the body — e.g. { userId } or { email }.
+export const adminAct = (action, args = {}) => call({ action, ...args });

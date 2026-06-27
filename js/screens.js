@@ -1129,15 +1129,31 @@ export function Import() {
 export function Admin() {
   const st = useStore();
   const [members, setMembers] = useState(null);
+  const [pending, setPending] = useState([]);
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState('');
   const [err, setErr] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviting, setInviting] = useState(false);
 
   const load = async () => {
-    try { const d = await adminList(); setMembers((d && d.members) || []); setErr(''); }
+    try { const d = await adminList(); setMembers((d && d.members) || []); setPending((d && d.pendingInvites) || []); setErr(''); }
     catch (e) { setErr(e.message || String(e)); setMembers([]); }
   };
   useEffect(() => { if (st.me.isOwner) load(); }, [st.me.isOwner]);
+
+  const invite = async () => {
+    const email = inviteEmail.trim();
+    if (!email || inviting) return;
+    setInviting(true);
+    try { await adminAct('invite', { email }); setInviteEmail(''); await load(); toast('Invited ' + email); }
+    catch (e) { toast(e.message || 'Could not invite'); }
+    setInviting(false);
+  };
+  const uninvite = async (email) => {
+    try { await adminAct('uninvite', { email }); await load(); toast('Invite canceled'); }
+    catch (e) { toast(e.message || 'Failed'); }
+  };
 
   if (!st.me.isOwner) {
     return html`<div class="screen"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button><div class="empty mt-20"><${Icon} name="alert" /><div>This area is just for the owner.</div></div></div>`;
@@ -1147,7 +1163,7 @@ export function Admin() {
     const key = action + ':' + m.id;
     if (needConfirm && confirm !== key) { setConfirm(key); return; }
     setConfirm(''); setBusy(key);
-    try { await adminAct(action, m.id); await load(); toast('Done'); }
+    try { await adminAct(action, { userId: m.id }); await load(); toast('Done'); }
     catch (e) { toast(e.message || 'Failed'); }
     setBusy('');
   };
@@ -1155,7 +1171,30 @@ export function Admin() {
   return html`<div class="screen">
     <button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>
     <div class="screen-title">Admin</div>
-    <div class="screen-sub">Members, advisor usage, and access.</div>
+    <div class="screen-sub">Invite people, see usage, and manage access.</div>
+
+    <div class="card">
+      <div class="section-title">Invite a friend</div>
+      <div class="row mt-8" style="gap:8px">
+        <input type="email" value=${inviteEmail} placeholder="friend@example.com"
+          style="flex:1;min-width:0;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);padding:10px 13px;font-size:14.5px"
+          onInput=${(e) => setInviteEmail(e.target.value)}
+          onKeyDown=${(e) => { if (e.key === 'Enter') invite(); }} />
+        <button class="btn btn-primary" disabled=${inviting} onClick=${invite}><${Icon} name="plus" /> Invite</button>
+      </div>
+      <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list — they sign in with a magic link. (Supabase's email caps at ~3–4/hr until custom SMTP is set up.)</p>
+    </div>
+
+    ${(pending || []).length ? html`<div class="section-head"><span class="section-title">Pending invites</span></div>
+      ${pending.map((p) => html`<div class="card">
+        <div class="row" style="gap:12px">
+          <div class="blind-gift" style="width:40px;height:40px;margin:0;border-radius:11px;background:var(--gold-soft);color:var(--gold);box-shadow:none"><${Icon} name="mail" /></div>
+          <div class="grow" style="min-width:0"><div class="book-title" style="word-break:break-word">${p.email}</div><div class="book-note">Invited — hasn't signed in yet</div></div>
+          <button class="tag" style="color:var(--danger)" onClick=${() => uninvite(p.email)}>Cancel</button>
+        </div>
+      </div>`)}` : ''}
+
+    ${(members || []).length || pending.length ? html`<div class="section-head"><span class="section-title">Members</span></div>` : ''}
 
     ${err && html`<div class="card">
       <p class="rec-line warn" style="margin:0"><${Icon} name="alert" /><span>${err}</span></p>

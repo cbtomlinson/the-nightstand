@@ -54,7 +54,28 @@ Deno.serve(async (req) => {
         calls30d: callsBy[p.id] || 0,
         shelfCount: itemsBy[p.id] || 0,
       }));
-      return json({ members });
+      // Invited but not signed in yet (on the allowlist, no profile row).
+      const { data: allowed } = await admin.from('allowed_emails').select('email, created_at').order('created_at', { ascending: true });
+      const memberEmails = new Set((profiles || []).map((p: any) => (p.email || '').toLowerCase()));
+      const pendingInvites = (allowed || [])
+        .filter((a: any) => !memberEmails.has((a.email || '').toLowerCase()))
+        .map((a: any) => ({ email: a.email, created_at: a.created_at }));
+      return json({ members, pendingInvites });
+    }
+
+    // Invites work on an email (no userId needed).
+    if (action === 'invite') {
+      const email = String(body.email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
+      await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
+      return json({ ok: true });
+    }
+    if (action === 'uninvite') {
+      const email = String(body.email || '').trim().toLowerCase();
+      if (!email) return json({ error: 'email required' }, 400);
+      if (email === OWNER_EMAIL) return json({ error: 'cannot remove the owner' }, 400);
+      await admin.from('allowed_emails').delete().ilike('email', email);
+      return json({ ok: true });
     }
 
     if (!userId) return json({ error: 'userId required' }, 400);
