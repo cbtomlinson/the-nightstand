@@ -22,6 +22,15 @@ export async function signOut() {
   return supabase.auth.signOut();
 }
 
+// Public waitlist signup — works for logged-out visitors (anon key + RLS insert policy).
+export async function joinWaitlist({ name = '', email, note = '' }) {
+  const e = (email || '').trim();
+  if (!e.includes('@')) throw new Error('Please enter a valid email.');
+  const { error } = await supabase.from('waitlist')
+    .insert({ name: name.trim() || null, email: e, note: note.trim() || null });
+  if (error) throw error;
+}
+
 export async function getUserEmail() {
   const { data: { user } } = await supabase.auth.getUser();
   return user ? user.email : null;

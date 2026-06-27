@@ -60,7 +60,8 @@ Deno.serve(async (req) => {
       const pendingInvites = (allowed || [])
         .filter((a: any) => !memberEmails.has((a.email || '').toLowerCase()))
         .map((a: any) => ({ email: a.email, created_at: a.created_at }));
-      return json({ members, pendingInvites });
+      const { data: waitlist } = await admin.from('waitlist').select('id, name, email, note, created_at').order('created_at', { ascending: false });
+      return json({ members, pendingInvites, waitlist: waitlist || [] });
     }
 
     // Invites work on an email (no userId needed).
@@ -68,6 +69,13 @@ Deno.serve(async (req) => {
       const email = String(body.email || '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
       await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
+      await admin.from('waitlist').delete().ilike('email', email); // clear from waitlist if they were on it
+      return json({ ok: true });
+    }
+    if (action === 'dismiss_waitlist') {
+      const email = String(body.email || '').trim().toLowerCase();
+      if (!email) return json({ error: 'email required' }, 400);
+      await admin.from('waitlist').delete().ilike('email', email);
       return json({ ok: true });
     }
     if (action === 'uninvite') {

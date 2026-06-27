@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast } from './ui.js';
 import { getBrand } from './brand.js';
-import { sendMagicLink } from './auth.js';
+import { sendMagicLink, joinWaitlist } from './auth.js';
 import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
@@ -908,9 +908,17 @@ export function Onboarding() {
 /* ---------------- Sign in (magic link) ---------------- */
 export function SignIn() {
   const brand = getBrand();
+  const [mode, setMode] = useState('signin'); // 'signin' | 'waitlist'
+  // sign-in
   const [email, setEmail] = useState('');
   const [stage, setStage] = useState('idle'); // idle | sending | sent | error
   const [err, setErr] = useState('');
+  // waitlist
+  const [wName, setWName] = useState('');
+  const [wEmail, setWEmail] = useState('');
+  const [wNote, setWNote] = useState('');
+  const [wStage, setWStage] = useState('idle'); // idle | saving | joined | error
+  const [wErr, setWErr] = useState('');
 
   const submit = async (e) => {
     if (e) e.preventDefault();
@@ -922,32 +930,72 @@ export function SignIn() {
     else setStage('sent');
   };
 
+  const join = async (e) => {
+    if (e) e.preventDefault();
+    if (wStage === 'saving') return;
+    setWStage('saving'); setWErr('');
+    try { await joinWaitlist({ name: wName, email: wEmail, note: wNote }); setWStage('joined'); }
+    catch (er) { setWErr(er.message || 'Something went wrong — try again.'); setWStage('error'); }
+  };
+
   return html`<div class="app"><main class="app-main"><div class="screen onb">
     <div class="onb-hero">
       <div class="familiar-lg">${brand.fam.art()}</div>
       <h1>${brand.name}</h1>
       <p>${brand.tagline}</p>
+      <div style="margin-top:12px"><span class="pill pill-lilac"><${Icon} name="moon" /> Invite-only · Beta</span></div>
     </div>
 
-    ${stage === 'sent'
-      ? html`<div class="card center-col" style="gap:10px">
-          <div class="badge-medal"><${Icon} name="mail" /></div>
-          <div class="book-title">Check your email ✉️</div>
-          <p class="muted" style="line-height:1.55;margin:0">I sent a one-tap link to <b>${email}</b>. Open it <b>in this same browser</b> to sign in.</p>
-          <button class="btn btn-ghost btn-block mt-12" onClick=${() => setStage('idle')}>Use a different email</button>
-        </div>`
-      : html`<form class="card" onSubmit=${submit}>
-          <div class="field" style="margin-bottom:10px">
-            <label>Your email</label>
-            <input type="email" autocomplete="email" placeholder="you@example.com"
-              value=${email} onInput=${(ev) => setEmail(ev.target.value)} />
-          </div>
-          ${stage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${err}</span></p>`}
-          <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'sending'}>
-            <${Icon} name="mail" /> ${stage === 'sending' ? 'Sending…' : 'Send me a magic link'}
-          </button>
-          <p class="dim" style="font-size:12px;text-align:center;margin:12px 0 0">No password — we email you a link that signs you in.</p>
-        </form>`}
+    <div class="seg" style="max-width:340px;margin:4px auto 16px">
+      <button class=${'seg-item' + (mode === 'signin' ? ' active' : '')} onClick=${() => setMode('signin')}>I have an invite</button>
+      <button class=${'seg-item' + (mode === 'waitlist' ? ' active' : '')} onClick=${() => setMode('waitlist')}>Join the waitlist</button>
+    </div>
+
+    ${mode === 'signin'
+      ? (stage === 'sent'
+        ? html`<div class="card center-col" style="gap:10px">
+            <div class="badge-medal"><${Icon} name="mail" /></div>
+            <div class="book-title">Check your email ✉️</div>
+            <p class="muted" style="line-height:1.55;margin:0">I sent a one-tap link to <b>${email}</b>. Open it <b>in this same browser</b> to sign in.</p>
+            <button class="btn btn-ghost btn-block mt-12" onClick=${() => setStage('idle')}>Use a different email</button>
+          </div>`
+        : html`<form class="card" onSubmit=${submit}>
+            <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.5">The Nightstand is invite-only right now. If your email is on the guest list, sign in below.</p>
+            <div class="field" style="margin-bottom:10px">
+              <label>Your email</label>
+              <input type="email" autocomplete="email" placeholder="you@example.com" value=${email} onInput=${(ev) => setEmail(ev.target.value)} />
+            </div>
+            ${stage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${err}</span></p>`}
+            <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'sending'}>
+              <${Icon} name="mail" /> ${stage === 'sending' ? 'Sending…' : 'Send me a magic link'}
+            </button>
+            <p class="dim" style="font-size:12px;text-align:center;margin:12px 0 0">No password — we email a link that signs you in. Only invited emails get in.</p>
+          </form>`)
+      : (wStage === 'joined'
+        ? html`<div class="card center-col" style="gap:10px">
+            <div class="badge-medal"><${Icon} name="check" /></div>
+            <div class="book-title">You’re on the list 🌙</div>
+            <p class="muted" style="line-height:1.55;margin:0">Thanks${wName.trim() ? ', ' + wName.trim().split(' ')[0] : ''}! I’ll reach out as spots open up.</p>
+          </div>`
+        : html`<form class="card" onSubmit=${join}>
+            <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.5">Not invited yet? Add your name and I’ll reach out as The Nightstand opens up to more readers.</p>
+            <div class="field" style="margin-bottom:10px">
+              <label>Your name</label>
+              <input placeholder="First name is fine" value=${wName} onInput=${(ev) => setWName(ev.target.value)} />
+            </div>
+            <div class="field" style="margin-bottom:10px">
+              <label>Your email</label>
+              <input type="email" autocomplete="email" placeholder="you@example.com" value=${wEmail} onInput=${(ev) => setWEmail(ev.target.value)} />
+            </div>
+            <div class="field" style="margin-bottom:10px">
+              <label>Anything you want me to know? <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+              <textarea rows="2" placeholder="What you read, who sent you…" value=${wNote} onInput=${(ev) => setWNote(ev.target.value)}></textarea>
+            </div>
+            ${wStage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${wErr}</span></p>`}
+            <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${wStage === 'saving'}>
+              <${Icon} name="sparkles" /> ${wStage === 'saving' ? 'Adding you…' : 'Add me to the waitlist'}
+            </button>
+          </form>`)}
   </div></main></div>`;
 }
 
@@ -1130,6 +1178,7 @@ export function Admin() {
   const st = useStore();
   const [members, setMembers] = useState(null);
   const [pending, setPending] = useState([]);
+  const [waitlist, setWaitlist] = useState([]);
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState('');
   const [err, setErr] = useState('');
@@ -1137,7 +1186,7 @@ export function Admin() {
   const [inviting, setInviting] = useState(false);
 
   const load = async () => {
-    try { const d = await adminList(); setMembers((d && d.members) || []); setPending((d && d.pendingInvites) || []); setErr(''); }
+    try { const d = await adminList(); setMembers((d && d.members) || []); setPending((d && d.pendingInvites) || []); setWaitlist((d && d.waitlist) || []); setErr(''); }
     catch (e) { setErr(e.message || String(e)); setMembers([]); }
   };
   useEffect(() => { if (st.me.isOwner) load(); }, [st.me.isOwner]);
@@ -1150,10 +1199,14 @@ export function Admin() {
     catch (e) { toast(e.message || 'Could not invite'); }
     setInviting(false);
   };
-  const uninvite = async (email) => {
-    try { await adminAct('uninvite', { email }); await load(); toast('Invite canceled'); }
+  // email-based actions: uninvite, invite-from-waitlist, dismiss_waitlist
+  const actEmail = async (action, email, okMsg) => {
+    setBusy(action + ':' + email);
+    try { await adminAct(action, { email }); await load(); toast(okMsg || 'Done'); }
     catch (e) { toast(e.message || 'Failed'); }
+    setBusy('');
   };
+  const uninvite = (email) => actEmail('uninvite', email, 'Invite canceled');
 
   if (!st.me.isOwner) {
     return html`<div class="screen"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button><div class="empty mt-20"><${Icon} name="alert" /><div>This area is just for the owner.</div></div></div>`;
@@ -1194,7 +1247,22 @@ export function Admin() {
         </div>
       </div>`)}` : ''}
 
-    ${(members || []).length || pending.length ? html`<div class="section-head"><span class="section-title">Members</span></div>` : ''}
+    ${(waitlist || []).length ? html`<div class="section-head"><span class="section-title">Waitlist · ${waitlist.length}</span></div>
+      ${waitlist.map((w) => html`<div class="card">
+        <div class="row" style="gap:12px">
+          <div class="grow" style="min-width:0">
+            <div class="book-title">${w.name || w.email}</div>
+            <div class="book-note" style="word-break:break-word">${w.email}</div>
+            ${w.note ? html`<div class="book-note" style="margin-top:6px">“${w.note}”</div>` : ''}
+          </div>
+        </div>
+        <div class="tagrow mt-12">
+          <button class="tag love" disabled=${!!busy} onClick=${() => actEmail('invite', w.email, 'Invited ' + w.email)}>Invite</button>
+          <button class="tag" style="color:var(--text-3)" disabled=${!!busy} onClick=${() => actEmail('dismiss_waitlist', w.email, 'Dismissed')}>Dismiss</button>
+        </div>
+      </div>`)}` : ''}
+
+    <div class="section-head"><span class="section-title">Members</span></div>
 
     ${err && html`<div class="card">
       <p class="rec-line warn" style="margin:0"><${Icon} name="alert" /><span>${err}</span></p>

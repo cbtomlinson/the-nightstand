@@ -291,4 +291,18 @@ drop policy if exists advisor_calls_own on public.advisor_calls;
 create policy advisor_calls_own on public.advisor_calls for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- ── 15) Waitlist (public interest from the landing page) ───────────────────
+create table if not exists public.waitlist (
+  id         uuid primary key default gen_random_uuid(),
+  name       text,
+  email      text not null,
+  note       text,
+  created_at timestamptz default now()
+);
+alter table public.waitlist enable row level security;
+-- Anyone (even logged-out visitors) may add themselves; NOBODY can read it from
+-- the client. The owner views it via the service-role admin function.
+drop policy if exists waitlist_insert on public.waitlist;
+create policy waitlist_insert on public.waitlist for insert with check (true);
+
 -- Done. Tables, security, and badges are ready.

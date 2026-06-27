@@ -14,3 +14,16 @@ alter table public.profiles
 -- Restore:
 --   update public.profiles set status = 'active'
 --   where id = (select id from auth.users where email = 'friend@example.com');
+
+-- ── Waitlist (public interest from the landing page) ──────────────────────
+-- Logged-out visitors can add themselves; only you can read it (via the admin fn).
+create table if not exists public.waitlist (
+  id         uuid primary key default gen_random_uuid(),
+  name       text,
+  email      text not null,
+  note       text,
+  created_at timestamptz default now()
+);
+alter table public.waitlist enable row level security;
+drop policy if exists waitlist_insert on public.waitlist;
+create policy waitlist_insert on public.waitlist for insert with check (true);
