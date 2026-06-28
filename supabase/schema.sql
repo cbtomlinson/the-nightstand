@@ -168,6 +168,28 @@ create trigger on_auth_user_created
   after insert on auth.users for each row
   execute function public.handle_new_user();
 
+-- The mirror case: someone is allow-listed AFTER their auth account already
+-- exists (e.g. they requested a magic link on the sign-in screen before being
+-- invited, so handle_new_user ran while they were NOT yet on the list and made
+-- no profile — and the signup trigger never fires again). When an email is added
+-- to the allowlist, backfill a profile for any matching existing auth user.
+-- Together these two triggers make the profile appear regardless of order.
+create or replace function public.backfill_profile_on_allow()
+returns trigger language plpgsql security definer set search_path = public, auth as $$
+begin
+  insert into public.profiles (id, email, display_name)
+  select u.id, u.email, split_part(u.email, '@', 1)
+  from auth.users u
+  where lower(u.email) = lower(new.email)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+drop trigger if exists on_allowed_email on public.allowed_emails;
+create trigger on_allowed_email
+  after insert on public.allowed_emails for each row
+  execute function public.backfill_profile_on_allow();
+
 -- ── 11) Row-Level Security ─────────────────────────────────────────────────
 alter table public.allowed_emails      enable row level security;
 alter table public.profiles            enable row level security;
