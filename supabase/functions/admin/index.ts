@@ -75,15 +75,23 @@ Deno.serve(async (req) => {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
       await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
       await admin.from('waitlist').delete().ilike('email', email); // if they were waiting, clear them
-      let emailed = false, already = false;
+      let emailed = false, already = false, inviteeId: string | null = null;
       try {
-        const { error: invErr } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: APP_URL });
+        const { data: inv, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: APP_URL });
         if (invErr) {
           const m = (invErr.message || '').toLowerCase();
           if (m.includes('already') || m.includes('registered') || m.includes('exists')) already = true;
           else console.warn('[admin] invite email:', invErr.message);
-        } else emailed = true;
+        } else { emailed = true; inviteeId = inv?.user?.id ?? null; }
       } catch (e) { console.warn('[admin] invite threw:', String(e)); }
+      // Connect the inviter (you) to the invitee so they land in each other's circle.
+      if (!inviteeId) {
+        const { data: prof } = await admin.from('profiles').select('id').ilike('email', email).maybeSingle();
+        inviteeId = prof?.id ?? null;
+      }
+      if (inviteeId && inviteeId !== user.id) {
+        try { await admin.rpc('connect_users', { x: user.id, y: inviteeId }); } catch (e) { console.warn('[admin] connect:', String(e)); }
+      }
       return json({ ok: true, emailed, already });
     }
     if (action === 'dismiss_waitlist') {

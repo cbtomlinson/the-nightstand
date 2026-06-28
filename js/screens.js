@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -742,15 +742,31 @@ export function BuddyRead() {
 
 /* ---------------- Friends (Kindred Readers) ---------------- */
 export function Friends() {
+  const [circle, setCircle] = useState(null);
+  useEffect(() => { getCircle().then(setCircle).catch(() => setCircle([])); }, []);
   return html`<div class="screen">
     <div class="screen-title">Your circle</div>
-    <div class="screen-sub">How your taste lines up with your people.</div>
+    <div class="screen-sub">Your people — and what they’re reading.</div>
 
-    <div class="card center-col" style="gap:10px;padding:30px 20px">
-      <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px;background:var(--teal-soft);color:var(--teal);box-shadow:none"><${Icon} name="heart" /></div>
-      <div class="book-title">No one in your circle yet</div>
-      <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">Once a friend joins, you’ll see your taste-match %, what they’re reading, and be able to send blind dates. To invite someone, add their email to the guest list in Supabase — they’ll get their own intake and a clean start.</p>
-    </div>
+    ${circle === null
+      ? html`<div class="card center-col" style="padding:26px"><div class="dim">Loading your circle…</div></div>`
+      : circle.length === 0
+        ? html`<div class="card center-col" style="gap:10px;padding:30px 20px">
+            <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px;background:var(--teal-soft);color:var(--teal);box-shadow:none"><${Icon} name="heart" /></div>
+            <div class="book-title">No one in your circle yet</div>
+            <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">Invite a friend from the Admin console and they’ll appear here — along with what they’re currently reading.</p>
+          </div>`
+        : circle.map((f) => html`<div class="card">
+            <div class="row" style="gap:12px">
+              <${Avatar} initial=${f.initial} color="#e9b85c" />
+              <div class="grow" style="min-width:0">
+                <div class="book-title">${f.name}</div>
+                ${f.reading.length
+                  ? html`<div class="book-note" style="word-break:break-word">📖 Reading ${f.reading.map((b, i) => html`${i ? ', ' : ''}<b>${b.title}</b>`)}</div>`
+                  : html`<div class="book-note dim">Not reading anything right now</div>`}
+              </div>
+            </div>
+          </div>`)}
   </div>`;
 }
 

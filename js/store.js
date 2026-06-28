@@ -388,6 +388,27 @@ export async function listMembers() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Your circle: the friends you're connected to (1:1), each with their current read.
+// RLS only returns connected people's profiles + their currently-reading items.
+export async function getCircle() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data: conns } = await supabase.from('connections')
+    .select('user_a, user_b').or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
+  const ids = (conns || []).map((c) => (c.user_a === user.id ? c.user_b : c.user_a));
+  if (!ids.length) return [];
+  const [{ data: profs }, { data: reads }] = await Promise.all([
+    supabase.from('profiles').select('id, display_name, email').in('id', ids),
+    supabase.from('shelf_items').select('user_id, books(title, author)').in('user_id', ids).eq('status', 'reading'),
+  ]);
+  const readingBy = {};
+  for (const r of reads || []) { if (r.books) (readingBy[r.user_id] = readingBy[r.user_id] || []).push(r.books); }
+  return (profs || []).map((p) => {
+    const nm = p.display_name || (p.email || '').split('@')[0] || 'Reader';
+    return { id: p.id, name: nm, initial: (nm[0] || 'R').toUpperCase(), reading: readingBy[p.id] || [] };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // Recommend a book to one or more friends, with an optional note.
 export async function recommendToFriends(mb, friendIds, note) {
   const { data: { user } } = await supabase.auth.getUser();

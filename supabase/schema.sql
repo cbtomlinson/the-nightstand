@@ -327,4 +327,58 @@ alter table public.waitlist enable row level security;
 drop policy if exists waitlist_insert on public.waitlist;
 create policy waitlist_insert on public.waitlist for insert with check (true);
 
+-- ── 16) Connections + circle privacy (social slice 1) ──────────────────────
+-- A mutual 1:1 friendship, stored canonically (user_a < user_b) so each pair is
+-- one row. This is your "Circle": ego-centric — your friends don't see each other
+-- through it, only you see all of them.
+create table if not exists public.connections (
+  user_a     uuid not null references auth.users(id) on delete cascade,
+  user_b     uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz default now(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+alter table public.connections enable row level security;
+drop policy if exists connections_select on public.connections;
+create policy connections_select on public.connections for select
+  using (auth.uid() = user_a or auth.uid() = user_b);
+
+create or replace function public.are_connected(x uuid, y uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.connections
+    where user_a = least(x, y) and user_b = greatest(x, y)
+  );
+$$;
+
+-- Idempotent helper to connect two users (called by the admin invite function).
+create or replace function public.connect_users(x uuid, y uuid)
+returns void language sql security definer set search_path = public as $$
+  insert into public.connections (user_a, user_b)
+  values (least(x, y), greatest(x, y))
+  on conflict do nothing;
+$$;
+
+-- Tighten visibility now that there's a real graph:
+--  • profiles: you see only yourself + people you're connected to.
+--  • shelves : yours stay private; connected friends see ONLY your currently-reading.
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles for select
+  using (id = auth.uid() or public.are_connected(auth.uid(), id));
+
+drop policy if exists shelf_select on public.shelf_items;
+create policy shelf_select on public.shelf_items for select using (
+  user_id = auth.uid()
+  or (is_public and status = 'reading' and public.are_connected(auth.uid(), user_id))
+);
+
+-- One-time backfill: connect the owner to every other existing member so the
+-- current members (you ↔ Kevin) are connected right away.
+insert into public.connections (user_a, user_b)
+select least(o.id, p.id), greatest(o.id, p.id)
+from public.profiles o
+join public.profiles p on p.id <> o.id
+where lower(o.email) = lower('tomlinson.chelsea@gmail.com')
+on conflict do nothing;
+
 -- Done. Tables, security, and badges are ready.
