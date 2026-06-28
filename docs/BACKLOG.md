@@ -40,6 +40,24 @@ table), buddy-read tables (a `buddy_reads` table + `BuddyRead` component templat
 `#/buddy` route is off), RLS scoped by connection/club membership, a feed query, reactions.
 Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 
+**Build progress + queue:**
+- ✅ **Slice 1 (shipped 2026-06-28):** connections table + ego-centric Circle; privacy tightened
+  (shelves private, currently-reading shared only with connections); Circle screen shows friends
+  + their current read; **tappable friend cards** → current reads as rich cards (cover, AI
+  description, ＋TBR, share, look-it-up, recommend); **PWA reload** (top-bar refresh button +
+  pull-to-refresh gesture for installed/standalone apps).
+- ⏭️ **Slice 2 — the cozy feed:** the Reading Room = ambient glimpses of your circle, namely
+  **"just finished" moments** + **reactions** (😍/👏). Passive, no page-visiting.
+- ⏭️ **Slice 3 — buddy reads:** flexible (1+ people, jump in anytime), progress + discussion
+  (open / honor-system spoilers for v1). Wire the existing `BuddyRead` template; turn the
+  `#/buddy` route back on.
+- ⏭️ **Slice 4 — Reading Rooms** (the renamed "Clubs"): persistent group rooms with a shared
+  wall, optional pinned group read, and a "books we've read together" shelf.
+- ⏭️ **Taste-match %** — NOT built (was only a mockup label). Needs a **server-side** function
+  (compare both users' loved/disliked + shared books + rating agreement → return just the %,
+  since shelves are now private), AND enough reading data to be meaningful — do it once Chelsea
+  + Kevin have logged some books, else it just shows a sad 0%.
+
 ## Phase 4 — going live for phones  ✅ mostly done (2026-06-27)
 - ✅ Deployed live at **https://littletomato.dev/the-nightstand/** (GitHub Pages, public repo).
 - ✅ Supabase Auth redirect URL added — magic-link sign-in confirmed working end-to-end.
