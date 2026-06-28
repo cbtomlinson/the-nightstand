@@ -49,9 +49,12 @@ function route(hash) {
   }
 }
 
-function Shell() {
+function Shell({ profile } = {}) {
   const hash = useHash();
   const brand = getBrand();
+  // The signed-in user's initial for the top-right avatar (was hardcoded to the
+  // owner's "C" from data.js — wrong for everyone else).
+  const avInitial = (profile && profile.display_name ? profile.display_name[0] : (me.initial || 'R')).toUpperCase();
   const { screen, nav, bare } = route(hash);
   const navCls = (k) => 'nav-item' + (nav === k ? ' active' : '');
   const [showTour, setShowTour] = useState(() => { try { return !localStorage.getItem('rg_tour_seen'); } catch (e) { return false; } });
@@ -69,7 +72,7 @@ function Shell() {
       <div class="topbar-actions">
         <button class="icon-btn" onClick=${() => go('/search')} aria-label="Add a book"><${Icon} name="plus" /></button>
         <button class="icon-btn" onClick=${() => go('/profile')} aria-label="Your profile">
-          <${Avatar} initial=${me.initial} color=${me.color} size="sm" />
+          <${Avatar} initial=${avInitial} color="#e9b85c" size="sm" />
         </button>
       </div>
     </header>`}
@@ -88,11 +91,19 @@ function Shell() {
   </div>`;
 }
 
-function LoadingScreen() {
+function LoadingScreen({ stage, onReload } = {}) {
   const brand = getBrand();
+  // If the boot drags, show what it's doing + a manual escape so no one is ever
+  // stranded staring at the splash (and the stage tells us where it stalled).
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), 4000); return () => clearTimeout(t); }, []);
   return html`<div class="app"><div class="splash">
     <div class="splash-lamp">${brand.fam.art()}</div>
     <div class="splash-sub">opening the library…</div>
+    ${slow ? html`<div style="margin-top:16px;text-align:center">
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Taking a moment${stage ? ` · ${stage}` : ''}…</div>
+      <button class="btn btn-ghost" onClick=${onReload || (() => location.reload())}>Reload</button>
+    </div>` : ''}
   </div></div>`;
 }
 
@@ -101,6 +112,7 @@ function App() {
   // Set when arriving from an invite/reset link → show the set-password screen.
   // Stored in sessionStorage so a reload mid-setup still lands on set-password.
   const [needPw, setNeedPw] = useState(() => { try { return sessionStorage.getItem('rg_need_pw') === '1'; } catch (_e) { return false; } });
+  const [bootStage, setBootStage] = useState('starting'); // shown on the splash if the boot drags
 
   useEffect(() => {
     // No backend configured yet → run the local (mock) app as before.
@@ -126,18 +138,24 @@ function App() {
     // hang and the silent bounce back to sign-in. Only AFTER the initial resolve do
     // we attach the change listener, so a stray INITIAL_SESSION can't clobber the
     // boot error or race the first paint.
+    // Note an invite/reset arrival synchronously (before any await) so a slow
+    // setSession can't lose the signal to show the set-password screen.
+    try {
+      if (/type=(invite|recovery)/.test(location.hash || '')) {
+        try { sessionStorage.setItem('rg_need_pw', '1'); } catch (_e) {}
+        if (active) setNeedPw(true);
+      }
+    } catch (_e) {}
+
     (async () => {
       let bootError = null;
-      try {
-        const r = await completeAuthRedirect();
-        if (r && r.error) bootError = r.error;
-        if (r && (r.type === 'invite' || r.type === 'recovery')) {
-          try { sessionStorage.setItem('rg_need_pw', '1'); } catch (_e) {}
-          if (active) setNeedPw(true);
-        }
-      } catch (_e) {}
+      if (active) setBootStage('restoring your session');
+      try { const r = await completeAuthRedirect(); if (r && r.error) bootError = r.error; } catch (_e) {}
       let session = null;
-      try { session = await getSession(); } catch (_e) {}
+      // Cap the wait so a slow token refresh can't trap the splash; the auth
+      // listener below still catches a session that lands a moment later.
+      try { session = await Promise.race([getSession(), new Promise((res) => setTimeout(() => res(null), 5000))]); } catch (_e) {}
+      if (active) setBootStage('loading your shelf');
       await apply(session, bootError);
       // Watch for later changes only — skip the redundant INITIAL_SESSION that
       // fires on subscribe, which would otherwise wipe the boot error we just set.
@@ -159,7 +177,7 @@ function App() {
     return () => { active = false; clearTimeout(timer); try { if (sub) sub.unsubscribe(); } catch (_e) {} };
   }, []);
 
-  if (st.loading) return html`<${LoadingScreen} />`;
+  if (st.loading) return html`<${LoadingScreen} stage=${bootStage} onReload=${() => location.reload()} />`;
   if (!isConfigured()) return html`<${Shell} />`;
   if (!st.session) return html`<${S.SignIn} bootError=${st.error} />`;
   if (needPw) return html`<${S.SetPassword} email=${st.email} onDone=${() => { try { sessionStorage.removeItem('rg_need_pw'); } catch (_e) {} setNeedPw(false); }} />`;
@@ -168,7 +186,7 @@ function App() {
   if (st.profile && st.profile.onboarding_complete === false) {
     return html`<div class="app"><main class="app-main"><${S.Onboarding} /></main></div>`;
   }
-  return html`<${Shell} />`;
+  return html`<${Shell} profile=${st.profile} />`;
 }
 
 render(html`<${App} />`, document.getElementById('app'));

@@ -1221,6 +1221,7 @@ function SearchResult({ b }) {
   const [enrich, setEnrich] = useState(undefined); // undefined = not fetched, null = none
   const [loadingE, setLoadingE] = useState(false);
   const [added, setAdded] = useState(null);        // shelf label once added
+  const [addedStatus, setAddedStatus] = useState(null); // which shelf key (for the active button)
   const [busy, setBusy] = useState(false);
 
   const toggle = () => {
@@ -1239,6 +1240,7 @@ function SearchResult({ b }) {
     try {
       await addToShelf({ title: b.title, author: b.author, coverUrl: (enrich && enrich.coverUrl) || b.coverUrl, tags: b.tags }, status);
       setAdded(statusMove[status]);
+      setAddedStatus(status);
       toast('Added to ' + statusMove[status]);
     } catch (e) { toast('Could not add'); }
     setBusy(false);
@@ -1267,7 +1269,7 @@ function SearchResult({ b }) {
       <div class="section-title mt-12">Add to…</div>
       <div class="tagrow mt-8">
         ${[['to_read', 'TBR'], ['reading', 'Reading'], ['finished', 'Finished'], ['dnf', 'DNF']].map(([s, label]) =>
-          html`<button class="tag" disabled=${busy} onClick=${() => add(s)}>${label}</button>`)}
+          html`<button class="tag" disabled=${busy} style=${addedStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${addedStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
       </div>
     </div>`}
   </div>`;
