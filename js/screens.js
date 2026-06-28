@@ -1318,7 +1318,7 @@ export function Admin() {
     const email = inviteEmail.trim();
     if (!email || inviting) return;
     setInviting(true);
-    try { await adminAct('invite', { email }); setInviteEmail(''); await load(); toast('Invited ' + email); }
+    try { const res = await adminAct('invite', { email }); setInviteEmail(''); await load(); toast((res && res.emailed) ? `Invited ${email} — sign-in email sent ✉️` : `Invited ${email} (couldn’t email — share the link)`); }
     catch (e) { toast(e.message || 'Could not invite'); }
     setInviting(false);
   };
@@ -1358,7 +1358,7 @@ export function Admin() {
           onKeyDown=${(e) => { if (e.key === 'Enter') invite(); }} />
         <button class="btn btn-primary" disabled=${inviting} onClick=${invite}><${Icon} name="plus" /> Invite</button>
       </div>
-      <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list — they sign in with a magic link. (Supabase's email caps at ~3–4/hr until custom SMTP is set up.)</p>
+      <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list and emails them a one-tap sign-in link.</p>
     </div>
 
     ${(pending || []).length ? html`<div class="section-head"><span class="section-title">Pending invites</span></div>

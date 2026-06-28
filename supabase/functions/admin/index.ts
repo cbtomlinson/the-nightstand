@@ -4,6 +4,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const OWNER_EMAIL = 'tomlinson.chelsea@gmail.com';
+const APP_URL = 'https://littletomato.dev/the-nightstand/'; // where invite magic-links land
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -70,7 +71,15 @@ Deno.serve(async (req) => {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
       await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
       await admin.from('waitlist').delete().ilike('email', email); // clear from waitlist if they were on it
-      return json({ ok: true });
+      // Best-effort: email them a one-tap sign-in link (via the configured SMTP / Resend).
+      let emailed = false;
+      try {
+        const pub = createClient(url, anon);
+        const { error: otpErr } = await pub.auth.signInWithOtp({ email, options: { emailRedirectTo: APP_URL, shouldCreateUser: true } });
+        emailed = !otpErr;
+        if (otpErr) console.warn('[admin] invite email:', otpErr.message);
+      } catch (e) { console.warn('[admin] invite email threw:', String(e)); }
+      return json({ ok: true, emailed });
     }
     if (action === 'dismiss_waitlist') {
       const email = String(body.email || '').trim().toLowerCase();
