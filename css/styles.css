@@ -294,6 +294,13 @@ img { display: block; max-width: 100%; }
   border-radius: 18px; padding: 11px 15px; font-size: 14.5px; max-height: 120px; line-height: 1.4;
 }
 .chat-input textarea:focus { outline: none; border-color: var(--gold); }
+
+/* iOS Safari zooms the whole page when you focus an input whose font-size is < 16px
+   — that's the "it zooms when I tap the field" jump in the advisor chat. Force every
+   form control to 16px on phones so focusing never zooms. Pinch-zoom still works. */
+@media (max-width: 700px) {
+  input, textarea, select { font-size: 16px !important; }
+}
 .send-btn {
   width: 44px; height: 44px; flex: none; border-radius: var(--pill); border: 0;
   background: linear-gradient(160deg, #f3d28c, #e0a544); color: #2a1c06;

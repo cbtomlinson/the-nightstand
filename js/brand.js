@@ -29,8 +29,15 @@ export const FAMILIARS = {
       <path d="M32 35c7 0 13 6 11 15-4 6-9 4-11-2z" fill="#cf9540"/>
       <circle cx="17" cy="26" r="3" fill="#241c40"/>
       <circle cx="47" cy="26" r="3" fill="#241c40"/>
-      <ellipse cx="32" cy="33" rx="3.4" ry="13" fill="#3a2d1a"/>
-      <circle cx="32" cy="19" r="3.4" fill="#3a2d1a"/>
+      <ellipse cx="32" cy="33" rx="3.4" ry="13" fill="#3a2d1a" stroke="#e9b85c" stroke-width="0.6"/>
+      <g stroke="#f4d27a" stroke-width="0.7" stroke-linecap="round">
+        <line x1="29.3" y1="25" x2="34.7" y2="25"/>
+        <line x1="28.8" y1="29" x2="35.2" y2="29"/>
+        <line x1="28.7" y1="33" x2="35.3" y2="33"/>
+        <line x1="28.8" y1="37" x2="35.2" y2="37"/>
+        <line x1="29.3" y1="41" x2="34.7" y2="41"/>
+      </g>
+      <circle cx="32" cy="19" r="3.4" fill="#3a2d1a" stroke="#e9b85c" stroke-width="0.6"/>
       <path d="M32 17c-2-4-7-6-10-4M32 17c2-4 7-6 10-4" fill="none" stroke="#3a2d1a" stroke-width="1.6" stroke-linecap="round"/>
     </svg>`,
   },
