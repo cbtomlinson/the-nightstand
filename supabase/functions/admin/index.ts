@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
       const email = String(body.email || '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
       await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
+      await admin.from('waitlist').delete().ilike('email', email); // if they were waiting, clear them
       let emailed = false, already = false;
       try {
         const { error: invErr } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: APP_URL });
