@@ -36,6 +36,7 @@ const PATHS = {
   edit:      html`<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>`,
   moon:      html`<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>`,
   mail:      html`<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M4 7.5l8 5.5 8-5.5"/>`,
+  refresh:   html`<path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 4.5v4h-4"/>`,
 };
 
 export function Icon({ name, solid, cls = '', size = 20 }) {

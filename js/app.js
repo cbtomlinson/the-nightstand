@@ -39,6 +39,7 @@ function route(hash) {
     case 'blind':      return { screen: html`<${S.BlindDate} />`, nav: 'genie' };
     case 'feed':       return { screen: html`<${S.Feed} />`, nav: 'feed' };
     case 'friends':    return { screen: html`<${S.Friends} />`, nav: 'friends' };
+    case 'friend':     return { screen: html`<${S.FriendDetail} id=${seg[1]} />`, nav: 'friends' };
     case 'profile':    return { screen: html`<${S.Profile} />`, nav: 'profile' };
     case 'search':     return { screen: html`<${S.Search} />`, nav: 'shelf' };
     case 'import':     return { screen: html`<${S.Import} />`, nav: 'profile' };
@@ -61,6 +62,28 @@ function Shell({ profile } = {}) {
   const closeTour = () => { try { localStorage.setItem('rg_tour_seen', '1'); } catch (e) {} setShowTour(false); };
   useEffect(() => { document.title = brand.name; }, [brand.name]);
   useEffect(() => { initStore(); }, []);
+  // Pull-to-refresh for installed (standalone) PWAs — iOS has no browser
+  // pull-to-refresh there. Drag down from the top of the scroll area to reload.
+  useEffect(() => {
+    const main = document.querySelector('.app-main');
+    if (!main) return;
+    let startY = null, dy = 0, active = false;
+    const onStart = (e) => { startY = main.scrollTop <= 0 ? e.touches[0].clientY : null; dy = 0; active = false; };
+    const onMove = (e) => {
+      if (startY == null) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy > 0 && main.scrollTop <= 0) { active = true; main.style.transform = `translateY(${Math.min(dy * 0.5, 80)}px)`; }
+    };
+    const onEnd = () => {
+      if (active && dy > 90) { location.reload(); return; }
+      if (active) { main.style.transition = 'transform .2s ease'; main.style.transform = ''; setTimeout(() => { main.style.transition = ''; }, 220); }
+      startY = null; dy = 0; active = false;
+    };
+    main.addEventListener('touchstart', onStart, { passive: true });
+    main.addEventListener('touchmove', onMove, { passive: true });
+    main.addEventListener('touchend', onEnd, { passive: true });
+    return () => { main.removeEventListener('touchstart', onStart); main.removeEventListener('touchmove', onMove); main.removeEventListener('touchend', onEnd); };
+  }, []);
 
   return html`<div class="app">
     ${!bare && html`<header class="topbar">
@@ -70,6 +93,7 @@ function Shell({ profile } = {}) {
         <span class="beta-tag">Beta</span>
       </div>
       <div class="topbar-actions">
+        <button class="icon-btn" onClick=${() => location.reload()} aria-label="Refresh"><${Icon} name="refresh" /></button>
         <button class="icon-btn" onClick=${() => go('/search')} aria-label="Add a book"><${Icon} name="plus" /></button>
         <button class="icon-btn" onClick=${() => go('/profile')} aria-label="Your profile">
           <${Avatar} initial=${avInitial} color="#e9b85c" size="sm" />

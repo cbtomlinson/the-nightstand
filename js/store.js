@@ -399,10 +399,10 @@ export async function getCircle() {
   if (!ids.length) return [];
   const [{ data: profs }, { data: reads }] = await Promise.all([
     supabase.from('profiles').select('id, display_name, email').in('id', ids),
-    supabase.from('shelf_items').select('user_id, books(title, author)').in('user_id', ids).eq('status', 'reading'),
+    supabase.from('shelf_items').select('user_id, books(id, title, author, cover_url, cover_color)').in('user_id', ids).eq('status', 'reading'),
   ]);
   const readingBy = {};
-  for (const r of reads || []) { if (r.books) (readingBy[r.user_id] = readingBy[r.user_id] || []).push(r.books); }
+  for (const r of reads || []) { const bk = r.books; if (bk) (readingBy[r.user_id] = readingBy[r.user_id] || []).push({ id: bk.id, title: bk.title, author: bk.author, coverUrl: bk.cover_url, cover: bk.cover_color }); }
   return (profs || []).map((p) => {
     const nm = p.display_name || (p.email || '').split('@')[0] || 'Reader';
     return { id: p.id, name: nm, initial: (nm[0] || 'R').toUpperCase(), reading: readingBy[p.id] || [] };

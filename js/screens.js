@@ -756,7 +756,7 @@ export function Friends() {
             <div class="book-title">No one in your circle yet</div>
             <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">Invite a friend from the Admin console and they’ll appear here — along with what they’re currently reading.</p>
           </div>`
-        : circle.map((f) => html`<div class="card">
+        : circle.map((f) => html`<div class="card" onClick=${() => go('/friend/' + f.id)} role="button" style="cursor:pointer">
             <div class="row" style="gap:12px">
               <${Avatar} initial=${f.initial} color="#e9b85c" />
               <div class="grow" style="min-width:0">
@@ -765,8 +765,60 @@ export function Friends() {
                   ? html`<div class="book-note" style="word-break:break-word">📖 Reading ${f.reading.map((b, i) => html`${i ? ', ' : ''}<b>${b.title}</b>`)}</div>`
                   : html`<div class="book-note dim">Not reading anything right now</div>`}
               </div>
+              <${Icon} name="chevright" cls="dim-ico" />
             </div>
           </div>`)}
+  </div>`;
+}
+
+/* ---------------- A friend + their current reads ---------------- */
+function FriendBook({ b }) {
+  const [desc, setDesc] = useState('');
+  const [added, setAdded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (advisorReady()) advisorDescribe({ title: b.title, author: b.author || '' }).then((d) => { if (alive) setDesc(d || ''); }).catch(() => {});
+    return () => { alive = false; };
+  }, [b.title]);
+  const add = async () => {
+    try { await addToShelf({ title: b.title, author: b.author, coverUrl: b.coverUrl, tags: [] }, 'to_read'); setAdded(true); toast('Added to TBR'); }
+    catch (e) { toast('Could not add'); }
+  };
+  return html`<div class="card">
+    <div class="row" style="gap:13px;align-items:flex-start">
+      <${BookCover} book=${b} />
+      <div class="grow" style="min-width:0">
+        <div class="book-title">${b.title}</div>
+        <div class="book-author">${b.author || ''}</div>
+        ${desc ? html`<p class="muted" style="margin:8px 0 0;line-height:1.5;font-size:12.5px">${desc.length > 240 ? desc.slice(0, 240) + '…' : desc}</p>` : ''}
+      </div>
+    </div>
+    <div class="tagrow mt-12">
+      <button class="tag" disabled=${added} style=${added ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${add}>${added ? html`<${Icon} name="check" /> On TBR` : '＋ TBR'}</button>
+      <button class="tag" onClick=${() => shareBook(b)}><${Icon} name="send" /> Share</button>
+      <a class="tag" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>
+    </div>
+    <${RecommendButton} book=${b} />
+  </div>`;
+}
+
+export function FriendDetail({ id }) {
+  const [friend, setFriend] = useState(undefined); // undefined = loading, null = not found
+  useEffect(() => { getCircle().then((list) => setFriend(list.find((f) => f.id === id) || null)).catch(() => setFriend(null)); }, [id]);
+
+  const back = html`<button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>`;
+  if (friend === undefined) return html`<div class="screen">${back}<div class="card center-col" style="padding:26px"><div class="dim">Loading…</div></div></div>`;
+  if (!friend) return html`<div class="screen">${back}<div class="empty mt-20"><${Icon} name="alert" /><div>This reader isn't in your circle.</div></div></div>`;
+  return html`<div class="screen">
+    ${back}
+    <div class="row mt-8" style="gap:14px;align-items:center">
+      <${Avatar} initial=${friend.initial} color="#e9b85c" size="lg" />
+      <div class="grow"><div class="screen-title" style="margin:0">${friend.name}</div><div class="book-note">In your circle</div></div>
+    </div>
+    <div class="section-head"><span class="section-title">Currently reading${friend.reading.length > 1 ? ` · ${friend.reading.length}` : ''}</span></div>
+    ${friend.reading.length
+      ? friend.reading.map((b) => html`<${FriendBook} b=${b} />`)
+      : html`<div class="card center-col" style="gap:8px;padding:26px"><div class="book-note dim">${friend.name} isn't reading anything right now.</div></div>`}
   </div>`;
 }
 
