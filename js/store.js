@@ -377,3 +377,51 @@ export async function setRatingAndNudge(itemId, book, rating) {
   }
   await refresh(user.id, await fetchProfile(user.id));
 }
+
+// ── Friend recommendations (the "recommendations" table; RLS-gated, no edge fn) ──
+// The circle = your fellow members.
+export async function listMembers() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase.from('profiles').select('id, display_name, email').neq('id', user.id);
+  return (data || []).map((p) => ({ id: p.id, name: p.display_name || (p.email || '').split('@')[0] || 'Reader' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Recommend a book to one or more friends, with an optional note.
+export async function recommendToFriends(mb, friendIds, note) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !friendIds || !friendIds.length) return 0;
+  const bookId = await findOrCreateBook(mb);
+  const rows = friendIds.map((fid) => ({
+    user_id: fid, book_id: bookId, source: 'friend', recommended_by: user.id,
+    rationale: (note || '').trim() || null, status: 'pending',
+  }));
+  const { error } = await supabase.from('recommendations').insert(rows);
+  if (error) { console.error('[store] recommendToFriends:', error.message); throw error; }
+  return rows.length;
+}
+
+// Incoming recommendations from friends (for the "From your circle" picks).
+export async function getCircleRecs() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase.from('recommendations')
+    .select('id, rationale, status, recommended_by, created_at, books(*)')
+    .eq('user_id', user.id).eq('source', 'friend').neq('status', 'dismissed')
+    .order('created_at', { ascending: false });
+  const nameById = {};
+  for (const m of await listMembers()) nameById[m.id] = m.name;
+  return (data || []).map((r) => ({
+    id: r.id, status: r.status, note: r.rationale, by: nameById[r.recommended_by] || 'a friend',
+    book: r.books ? { id: r.books.id, title: r.books.title, author: r.books.author, cover: r.books.cover_color || '#3a3160', coverUrl: r.books.cover_url || null, tags: (r.books.meta && r.books.meta.tags) || [] } : null,
+  })).filter((r) => r.book);
+}
+
+// Respond to a friend rec: 'accepted' (also adds it to your TBR) or 'dismissed'.
+export async function respondToRec(recId, status, mb) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  if (status === 'accepted' && mb) { try { await addToShelf(mb, 'to_read'); } catch (_e) {} }
+  await supabase.from('recommendations').update({ status }).eq('id', recId);
+}

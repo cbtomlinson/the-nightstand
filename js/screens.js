@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { sendMagicLink, joinWaitlist } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -46,6 +46,54 @@ function AdvisorPaused() {
     <div class="book-title">Mabel is paused on your account</div>
     <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">You can still use all your shelves — add books, rate them, track progress, and mark where to find them. Ask Chelsea to switch the advisor back on.</p>
     <button class="btn btn-block mt-8" onClick=${() => go('/shelf')}><${Icon} name="books" /> Go to your shelves</button>
+  </div>`;
+}
+
+// "Recommend to a friend" — inline picker (members + note); writes a friend rec
+// that lands in their "From your circle" picks (the recommendations table).
+function RecommendButton({ book }) {
+  const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState(null);
+  const [picked, setPicked] = useState([]);
+  const [note, setNote] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const toggleOpen = async () => {
+    const nx = !open; setOpen(nx);
+    if (nx && members === null) { try { setMembers(await listMembers()); } catch (_e) { setMembers([]); } }
+  };
+  const toggle = (id) => setPicked((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  const send = async () => {
+    if (!picked.length || sending) return;
+    setSending(true);
+    try {
+      const n = await recommendToFriends(book, picked, note);
+      toast(`Recommended to ${n} ${n === 1 ? 'friend' : 'friends'} 🌙`);
+      setOpen(false); setPicked([]); setNote('');
+    } catch (e) { toast('Could not send — try again'); }
+    setSending(false);
+  };
+
+  return html`<div class="card mt-12">
+    <button class="btn btn-block" onClick=${toggleOpen}><${Icon} name="heart" /> Recommend to a friend</button>
+    ${open ? html`<div class="mt-12">
+      ${members === null
+        ? html`<div class="empty" style="padding:14px"><div class="bubble genie typing" style="align-self:center"><i></i><i></i><i></i></div></div>`
+        : members.length === 0
+          ? html`<p class="dim" style="margin:0;font-size:13px">No one in your circle yet — invite a friend from the Admin console.</p>`
+          : html`
+            <div class="section-title">Send to…</div>
+            <div class="tagrow mt-8">
+              ${members.map((m) => html`<button class=${'tag' + (picked.includes(m.id) ? ' love' : '')} onClick=${() => toggle(m.id)}>${picked.includes(m.id) ? '✓ ' : ''}${m.name}</button>`)}
+            </div>
+            <div class="field mt-12" style="margin-bottom:0">
+              <label>Add a note <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+              <textarea rows="2" placeholder="why you think they’ll love it…" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>
+            </div>
+            <button class="btn btn-primary btn-block mt-12" disabled=${!picked.length || sending} onClick=${send}>
+              <${Icon} name="send" /> ${sending ? 'Sending…' : (picked.length ? `Recommend to ${picked.length}` : 'Pick a friend')}
+            </button>`}
+    </div>` : ''}
   </div>`;
 }
 
@@ -245,6 +293,8 @@ export function BookDetail({ id }) {
       <a class="btn btn-ghost grow" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Look it up</a>
     </div>
 
+    <${RecommendButton} book=${b} />
+
     ${status === 'reading' && html`<div class="card mt-16">
       <div class="between"><span class="section-title">Your progress</span><span class="conf-num">${item.progress || 0}%</span></div>
       <input type="range" class="range mt-8" min="0" max="100" step="1" value=${item.progress || 0} disabled=${busy}
@@ -320,10 +370,22 @@ export function Genie() {
   const [mood, setMood] = useState(st.me.mood || '');
   const [dismissed, setDismissed] = useState([]);
   const [diag, setDiag] = useState(null);
+  const [circleRecs, setCircleRecs] = useState([]);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => { try { const r = await getCircleRecs(); if (alive) setCircleRecs(r); } catch (_e) {} })();
+    return () => { alive = false; };
+  }, []);
 
   if (st.me.status === 'archived') {
     return html`<div class="screen"><div class="screen-title">Your next read</div><${AdvisorPaused} /></div>`;
   }
+
+  const respondRec = async (rec, status) => {
+    setCircleRecs((rs) => rs.filter((r) => r.id !== rec.id));
+    try { await respondToRec(rec.id, status, status === 'accepted' ? rec.book : null); if (status === 'accepted') toast('Added to your shelf'); } catch (_e) {}
+  };
 
   const consult = async () => {
     if (loading) return;
@@ -378,6 +440,23 @@ export function Genie() {
       <button class=${'btn btn-primary btn-block mt-12' + (loading ? ' pulsing' : '')} disabled=${loading} onClick=${consult}><${Icon} name="sparkles" /> ${loading ? 'Consulting the stars…' : 'Consult your advisor'}</button>
       ${loading && html`<div class="dim" style="font-size:12.5px;text-align:center;margin-top:10px">Mabel is reading your shelves — this can take a moment.</div>`}
     </div>
+
+    ${circleRecs.length ? html`<div class="section-head"><span class="section-title">From your circle</span></div>
+      ${circleRecs.map((rec) => html`<div class="card">
+        <div class="book-row">
+          <${BookCover} book=${rec.book} />
+          <div class="book-meta">
+            <div class="book-title">${rec.book.title}</div>
+            <div class="book-author">${rec.book.author}</div>
+            <div class="rec-line good" style="margin-top:6px"><${Icon} name="heart" /><span><b>${rec.by}</b> thinks you’ll love this.</span></div>
+            ${rec.note ? html`<p class="rec-line" style="margin-top:4px"><${Icon} name="sparkle" /><span>“${rec.note}”</span></p>` : ''}
+          </div>
+        </div>
+        <div class="row mt-12" style="gap:8px">
+          <button class="btn btn-primary grow" onClick=${() => respondRec(rec, 'accepted')}><${Icon} name="plus" /> Add to shelf</button>
+          <button class="btn" onClick=${() => respondRec(rec, 'dismissed')}>Dismiss</button>
+        </div>
+      </div>`)}` : ''}
 
     ${!loading && recs === null ? html`<div class="card center-col" style="gap:8px;padding:22px 16px">
       <div class="muted" style="font-size:13.5px;text-align:center;line-height:1.5">Tap <b>Consult your advisor</b> and I’ll choose a few books for your taste and mood — each with my reasoning and confidence.</div>
@@ -1031,7 +1110,7 @@ export function SignIn() {
             </button>
           </form>`)}
 
-    <p class="dim" style="font-size:11.5px;text-align:center;margin:18px auto 0;max-width:310px;line-height:1.6">📲 <b>Make it an app:</b> open this page in <a href="https://apps.apple.com/us/app/path-browser/id1519521388" target="_blank" rel="noopener" style="color:var(--lilac);border-bottom:1px solid var(--line-2)">Path Browser</a> (free) — or Safari on iPhone — then tap <b>Share → Add to Home Screen</b> for the full-screen experience.</p>
+    <p class="dim" style="font-size:11.5px;text-align:center;margin:18px auto 0;max-width:320px;line-height:1.6">📲 <b>Make it an app:</b> on iPhone, open in <b>Safari</b> → <b>Share → Add to Home Screen</b>. On Android, in <b>Chrome</b> → <b>⋮ → Add to Home screen</b>. It opens full-screen, like a real app.</p>
   </div></main></div>`;
 }
 
