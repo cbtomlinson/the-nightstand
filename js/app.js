@@ -6,7 +6,7 @@ import { Icon, Avatar } from './ui.js';
 import { me } from './data.js';
 import { getBrand } from './brand.js';
 import { isConfigured } from './config.js';
-import { getSession, onAuth, getMyProfile, signOut } from './auth.js';
+import { getSession, onAuth, getMyProfile, signOut, completeAuthRedirect } from './auth.js';
 import { init as initStore } from './store.js';
 import * as S from './screens.js';
 import { go } from './screens.js';
@@ -97,50 +97,55 @@ function LoadingScreen() {
 }
 
 function App() {
-  const [st, setSt] = useState({ loading: true, session: null, profile: null, email: null });
+  const [st, setSt] = useState({ loading: true, session: null, profile: null, email: null, error: null });
 
   useEffect(() => {
     // No backend configured yet → run the local (mock) app as before.
     if (!isConfigured()) {
-      setSt({ loading: false, session: 'local', profile: { local: true }, email: null });
+      setSt({ loading: false, session: 'local', profile: { local: true }, email: null, error: null });
       return;
     }
-    let active = true, settled = false, sub;
+    let active = true, sub;
 
-    // Resolve the auth state from a session (handles initial load + every change).
-    const apply = async (session) => {
+    // Resolve the auth state from a session (+ an optional boot error to surface).
+    const apply = async (session, err = null) => {
       if (!active) return;
-      settled = true;
       const email = (session && session.user && session.user.email) || null;
       let profile = null;
       try { profile = session ? await getMyProfile(session.user && session.user.id) : null; } catch (_e) {}
-      if (active) setSt({ loading: false, session: session || null, profile, email });
+      if (active) setSt({ loading: false, session: session || null, profile, email, error: err });
     };
 
-    // Primary path: the auth listener fires INITIAL_SESSION immediately (no await on
-    // getSession, which is the call that can stall) and then on every later change.
-    try {
-      const { data } = onAuth((session) => { apply(session); });
-      sub = data && data.subscription;
-    } catch (_e) {}
-
-    // Backstop in case the listener is slow to deliver the initial session.
+    // Bootstrap: first finish any magic-link redirect sitting in the URL (this
+    // establishes + persists the session, or captures an error), THEN read the
+    // session and render. Doing the redirect explicitly — with a non-blocking auth
+    // lock (see supabase.js) — is what fixes the "stuck on opening the library"
+    // hang and the silent bounce back to sign-in. Only AFTER the initial resolve do
+    // we attach the change listener, so a stray INITIAL_SESSION can't clobber the
+    // boot error or race the first paint.
     (async () => {
-      try { const session = await getSession(); if (!settled) apply(session); }
-      catch (_e) { if (!settled) apply(null); }
+      let bootError = null;
+      try { const r = await completeAuthRedirect(); if (r && r.error) bootError = r.error; } catch (_e) {}
+      let session = null;
+      try { session = await getSession(); } catch (_e) {}
+      await apply(session, bootError);
+      // Watch for later changes only — skip the redundant INITIAL_SESSION that
+      // fires on subscribe, which would otherwise wipe the boot error we just set.
+      try {
+        const { data } = onAuth((s, event) => { if (event === 'INITIAL_SESSION') return; apply(s, null); });
+        sub = data && data.subscription;
+      } catch (_e) {}
     })();
 
-    // Safety net: never sit on the splash forever — fixes the intermittent
-    // "stuck on opening the library, reload to fix" hang. The listener stays live,
-    // so if a session arrives a moment later it still corrects itself.
-    const timer = setTimeout(() => { if (!settled && active) setSt((p) => ({ ...p, loading: false })); }, 6000);
+    // Safety net: never sit on the splash forever.
+    const timer = setTimeout(() => { if (active) setSt((p) => (p.loading ? { ...p, loading: false } : p)); }, 8000);
 
     return () => { active = false; clearTimeout(timer); try { if (sub) sub.unsubscribe(); } catch (_e) {} };
   }, []);
 
   if (st.loading) return html`<${LoadingScreen} />`;
   if (!isConfigured()) return html`<${Shell} />`;
-  if (!st.session) return html`<${S.SignIn} />`;
+  if (!st.session) return html`<${S.SignIn} bootError=${st.error} />`;
   if (!st.profile) return html`<${S.NotInvited} email=${st.email} onSignOut=${signOut} />`;
   // New members (friends): walk them through onboarding before the app proper.
   if (st.profile && st.profile.onboarding_complete === false) {

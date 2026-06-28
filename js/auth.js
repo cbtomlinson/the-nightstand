@@ -7,7 +7,7 @@ export async function getSession() {
 }
 
 export function onAuth(cb) {
-  return supabase.auth.onAuthStateChange((_event, session) => cb(session));
+  return supabase.auth.onAuthStateChange((event, session) => cb(session, event));
 }
 
 export async function sendMagicLink(email) {
@@ -20,6 +20,40 @@ export async function sendMagicLink(email) {
 
 export async function signOut() {
   return supabase.auth.signOut();
+}
+
+// Finish a magic-link sign-in. Supabase sends the user back to the app with the
+// session tokens (or an error) in the URL hash, e.g.
+//   /the-nightstand/#access_token=…&refresh_token=…&type=magiclink
+// We establish the session from those tokens, then strip them from the URL so
+// (a) the one-time tokens don't linger in history and (b) they don't collide with
+// the app's hash router. Returns { ok, error }. A no-op (and harmless) when the
+// URL carries no auth params, so it's safe to call on every load.
+export async function completeAuthRedirect() {
+  let raw = '';
+  try { raw = (location.hash || '').replace(/^#\/?/, ''); } catch (_e) { return { ok: false, error: null }; }
+  if (!raw || !/(access_token|error|error_description)=/.test(raw)) return { ok: false, error: null };
+
+  const clean = () => {
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (_e) {}
+  };
+
+  const p = new URLSearchParams(raw);
+  const errDesc = p.get('error_description') || p.get('error');
+  if (errDesc) { clean(); return { ok: false, error: errDesc.replace(/\+/g, ' ') }; }
+
+  const access_token = p.get('access_token');
+  const refresh_token = p.get('refresh_token');
+  if (!access_token || !refresh_token) { clean(); return { ok: false, error: null }; }
+
+  try {
+    const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+    clean();
+    return error ? { ok: false, error: error.message } : { ok: true, error: null };
+  } catch (e) {
+    clean();
+    return { ok: false, error: (e && e.message) || 'Could not complete sign-in.' };
+  }
 }
 
 // Public waitlist signup — works for logged-out visitors (anon key + RLS insert policy).

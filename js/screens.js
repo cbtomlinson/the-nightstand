@@ -1019,7 +1019,7 @@ export function Onboarding() {
 }
 
 /* ---------------- Sign in (magic link) ---------------- */
-export function SignIn() {
+export function SignIn({ bootError = null } = {}) {
   const brand = getBrand();
   const [mode, setMode] = useState('signin'); // 'signin' | 'waitlist'
   // sign-in
@@ -1063,6 +1063,8 @@ export function SignIn() {
       <button class=${'seg-item' + (mode === 'signin' ? ' active' : '')} onClick=${() => setMode('signin')}>I have an invite</button>
       <button class=${'seg-item' + (mode === 'waitlist' ? ' active' : '')} onClick=${() => setMode('waitlist')}>Join the waitlist</button>
     </div>
+
+    ${bootError && html`<p class="rec-line warn" style="max-width:340px;margin:0 auto 14px"><${Icon} name="alert" /><span>Sign-in didn't complete: ${bootError}. Please request a new link and open it in this same browser.</span></p>`}
 
     ${mode === 'signin'
       ? (stage === 'sent'
