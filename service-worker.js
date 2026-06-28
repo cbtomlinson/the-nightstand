@@ -1,6 +1,6 @@
 // Reading Genie — service worker (offline app shell)
 // Bump CACHE when shipping new assets so clients pick up the update.
-const CACHE = 'reading-genie-v7';
+const CACHE = 'reading-genie-v8';
 
 const CORE = [
   './',
