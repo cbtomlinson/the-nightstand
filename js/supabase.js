@@ -3,25 +3,32 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 
-// supabase-js v2 guards every auth-token read/write with the Web Locks API so that
-// multiple tabs don't refresh the token at once. In standalone-PWA / Safari that
-// lock can DEADLOCK — auth calls (including setSession during a magic-link sign-in)
-// never resolve, and the app hangs forever on the splash ("opening the library…").
-// This is a single-user app that effectively runs in one tab, so we don't need
-// cross-tab locking. We pass a no-op lock that just runs the operation immediately
-// and never blocks — which is what makes magic-link sign-in actually complete.
-const noBlockLock = async (_name, _acquireTimeout, fn) => fn();
+// supabase-js defaults to the Web Locks API to stop two token refreshes running at
+// once. In standalone-PWA / Safari that lock can DEADLOCK — auth calls never resolve
+// and the app hangs forever on the splash ("opening the library…"). A no-op lock
+// cured the deadlock but removed ALL serialization, so concurrent refreshes raced
+// (refresh-token rotation invalidates one) → the *intermittent* splash hangs / surprise
+// sign-outs. This is a tiny in-process queue (the same idea as supabase's own
+// processLock, inlined so we don't depend on a CDN named export): it serializes auth
+// ops through one promise chain — no concurrent-refresh race — WITHOUT touching Web
+// Locks, so it can't deadlock. Best of both for a single-tab PWA.
+let authChain = Promise.resolve();
+function serialLock(_name, _acquireTimeout, fn) {
+  const run = authChain.then(fn, fn);
+  authChain = run.then(() => {}, () => {});
+  return run;
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    // We finish the magic-link redirect ourselves (see completeAuthRedirect in
+    // We finish the invite/reset redirect ourselves (see completeAuthRedirect in
     // auth.js + the gate in app.js). The built-in auto-detection runs at client
     // construction and would fight the app's hash router for the URL fragment.
     // Doing it explicitly after mount lets us control timing, strip the token from
     // the hash, and surface errors instead of failing silently.
     detectSessionInUrl: false,
-    lock: noBlockLock,
+    lock: serialLock,
   },
 });
