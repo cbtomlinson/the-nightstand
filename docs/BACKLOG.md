@@ -17,11 +17,19 @@ Things we've intentionally deferred (not bugs — decisions or future phases).
 
 ## Phase 4 — going live for phones  ✅ mostly done (2026-06-27)
 - ✅ Deployed live at **https://littletomato.dev/the-nightstand/** (GitHub Pages, public repo).
-- ✅ Supabase Auth redirect URL added — magic-link sign-in confirmed working.
-- ⏳ Re-enable the **service worker** for offline/install (still disabled in `index.html`
-  for dev cache sanity — fine to leave off through Beta).
-- ⏳ **Custom SMTP (Resend)** — deferred by Chelsea; not needed while it's just her + a few
-  friends (Supabase's built-in mailer ~3–4 magic-links/hr). Set up before scaling.
+- ✅ Supabase Auth redirect URL added — magic-link sign-in confirmed working end-to-end.
+- ✅ **Custom SMTP (Resend)** — done: domain `littletomato.dev` verified, wired into Supabase
+  (sender `nightstand@littletomato.dev`); the ~3–4/hr cap is gone.
+- ⏳ **Re-enable the service worker** for a *true* installable/offline PWA. Current state:
+  the SW is **completely off** — nothing calls `navigator.serviceWorker.register()`, and
+  `index.html` actively **unregisters any SW + clears all caches on every load** (leftover
+  "dev mode" code). `service-worker.js` (cache-v8, cache-first app shell) exists but is dead
+  code until registered. To turn it on, when ready: (1) register the SW (e.g. in `app.js`),
+  (2) remove the unregister/cache-clear block in `index.html`, (3) adopt **cache-bump
+  discipline** — bump `CACHE` in `service-worker.js` on every JS/CSS change so installed
+  clients pull fresh code (this is the "why am I seeing old code" trap). **Deliberately
+  deferred past Beta** — keeping it off means everyone always gets the latest on reload,
+  which is what we want while iterating. _(Chelsea asked to park this — 2026-06-27.)_
 
 ## Product direction (someday) — Chelsea's roadmap
 Staying **invite-only for Chelsea + friends** for now. Possible futures (noted 2026-06-27):
