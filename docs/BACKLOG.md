@@ -9,11 +9,36 @@ Things we've intentionally deferred (not bugs — decisions or future phases).
   (cover/title concealed until reveal) and have the veto buttons actually rotate it.
   _(Chelsea wants to think about it — 2026-06-27.)_
 
-## Phase 3 — when friends join
-- Wire **buddy reads** + the **Reading Room feed** + **Your circle** taste-match to real
-  data (the `BuddyRead` component is kept as a template; `#/buddy` route is currently off).
-- "Send a friend a blind date" / shared shelves.
-- Consider a mood/"currently reading" presence in the circle.
+## Phase 3 — the social model (designed 2026-06-28 with Chelsea; not built yet)
+Designed via interview. Vibe: **cozy + private by default**, StoryGraph-leaning (not
+Goodreads' broadcast-everything). Three layers — Circle → Clubs → Buddy reads:
+- **Circle** — your *personal* set of friends (you ↔ each person), **ego-centric**: your
+  friends do NOT see each other through it; only you see all of them (you're the hub). This
+  makes "Kevin close, but not mixed in with my girlfriends" work *for free* — unconnected
+  people never see each other. (How people enter your circle: TBD — likely auto on invite,
+  since it's invite-only + small.)
+- **Clubs** — persistent named *group rooms* where everyone in the club sees everyone else:
+  a shared wall (ongoing group chatter / recs / reactions, NOT tied to one book), an optional
+  pinned **group read**, a "books we've read together" shelf, and an identity (name + emoji/
+  color). Scales 2→many (a 2-person "Family" club with Kevin is fine). ⚠️ **TO-DO: brainstorm
+  a better term than "Clubs"** — might find something better.
+- **Buddy reads** — the *reading-together* mechanic: 1+ people on one book, **flexible/chill**
+  (jump in partway, NOT synced to page 1), with progress + discussion. Works 1:1 OR as a club's
+  pinned read (the two compose). Spoilers: **open / honor-system for v1** (small trusted group);
+  **progress-gated comments = future enhancement** (StoryGraph-style hide-past-your-progress).
+- **Cozy feed ("Reading Room")** — ambient, ego-centric glimpses of YOUR circle: currently-
+  reading, **"just finished" moments**, and **reactions** (😍/👏). Passive — no page-visiting.
+
+**Visibility / privacy (decided):** **private by default.** Your **shelves are yours alone** —
+nobody browses them. Shared signals only: currently-reading, just-finished, reactions, recs,
+and buddy-read progress + discussion. **Taste-match %** still works — computed **server-side**
+so it shows just the number without exposing anyone's books. ("Recommend a book to a friend"
+already exists today.)
+
+Build notes: new `circles`/`circle_members` + clubs/club_members tables (or one unified groups
+table), buddy-read tables (a `buddy_reads` table + `BuddyRead` component template already exist;
+`#/buddy` route is off), RLS scoped by connection/club membership, a feed query, reactions.
+Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 
 ## Phase 4 — going live for phones  ✅ mostly done (2026-06-27)
 - ✅ Deployed live at **https://littletomato.dev/the-nightstand/** (GitHub Pages, public repo).
