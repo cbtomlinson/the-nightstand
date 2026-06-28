@@ -138,8 +138,7 @@ export function Shelf({ tab: initialTab }) {
     return html`<div class="screen"><div class="empty mt-20"><${Icon} name="books" /><div>Opening your shelves…</div></div></div>`;
   }
 
-  const reading = st.shelves.reading[0];
-  const rb = reading ? st.booksById[reading.bookId] : null;
+  const readingItems = st.shelves.reading || [];
   const list = st.shelves[tab];
 
   return html`<div class="screen">
@@ -156,17 +155,21 @@ export function Shelf({ tab: initialTab }) {
 
     <${WishCard} />
 
-    ${reading && rb && html`
-      <div class="section-head"><span class="section-title">Continue reading</span></div>
-      <div class="card book-row" onClick=${() => go('/book/' + rb.id)} role="button">
-        <${BookCover} book=${rb} />
-        <div class="book-meta">
-          <div class="book-title">${rb.title}</div>
-          <div class="book-author">${rb.author}</div>
-          <${Progress} pct=${reading.progress} />
-          <div class="book-note">${reading.progress}% · tap “I finished this” to talk it over with the advisor</div>
-        </div>
-      </div>`}
+    ${readingItems.length ? html`
+      <div class="section-head"><span class="section-title">Continue reading${readingItems.length > 1 ? ` · ${readingItems.length}` : ''}</span></div>
+      ${readingItems.map((item) => {
+        const rb = st.booksById[item.bookId];
+        if (!rb) return null;
+        return html`<div class="card book-row" onClick=${() => go('/book/' + rb.id)} role="button">
+          <${BookCover} book=${rb} />
+          <div class="book-meta">
+            <div class="book-title">${rb.title}</div>
+            <div class="book-author">${rb.author}</div>
+            <${Progress} pct=${item.progress} />
+            <div class="book-note">${item.progress}% · tap to log progress or finish</div>
+          </div>
+        </div>`;
+      })}` : ''}
 
     <div class="section-head"><span class="section-title">Your shelves</span><button class="section-link" style="background:none;border:0;cursor:pointer" onClick=${() => go('/search')}>+ Add a book</button></div>
     <div class="seg">
