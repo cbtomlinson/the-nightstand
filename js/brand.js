@@ -38,7 +38,9 @@ export const FAMILIARS = {
         <line x1="29.3" y1="41" x2="34.7" y2="41"/>
       </g>
       <circle cx="32" cy="19" r="3.4" fill="#3a2d1a" stroke="#e9b85c" stroke-width="0.6"/>
-      <path d="M32 17c-2-4-7-6-10-4M32 17c2-4 7-6 10-4" fill="none" stroke="#3a2d1a" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M32 17c-2-4-7-6-10-4M32 17c2-4 7-6 10-4" fill="none" stroke="#e9b85c" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="22" cy="13" r="1.5" fill="#f4d27a"/>
+      <circle cx="42" cy="13" r="1.5" fill="#f4d27a"/>
     </svg>`,
   },
   dog: {
