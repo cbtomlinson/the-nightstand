@@ -113,3 +113,19 @@ export function toast(msg) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 2000);
 }
+
+// Share a book via the phone's native share sheet (iMessage / WhatsApp / Mail…),
+// with a copy-to-clipboard fallback. Works for anyone — no account needed. The
+// link lands on the invite-only page, so it gently doubles as an invite.
+const SHARE_URL = 'https://littletomato.dev/the-nightstand/';
+export async function shareBook(book) {
+  const title = (book && book.title) || 'this book';
+  const byline = (book && book.author) ? ' — ' + book.author : '';
+  const text = `I thought you'd like 📖 ${title}${byline}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: `${title} · The Nightstand`, text, url: SHARE_URL }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; /* user canceled — done */ }
+  }
+  try { await navigator.clipboard.writeText(`${text} ${SHARE_URL}`); toast('Copied — paste it to a friend'); }
+  catch (e) { toast('Couldn’t open share — copy the link manually'); }
+}

@@ -2,7 +2,7 @@
 import { html } from './html.js';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import * as D from './data.js';
-import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast } from './ui.js';
+import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { sendMagicLink, joinWaitlist } from './auth.js';
 import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding } from './store.js';
@@ -240,7 +240,10 @@ export function BookDetail({ id }) {
       </div>`;
     })()}
 
-    <a class="btn btn-ghost btn-block mt-12" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Look it up on the web</a>
+    <div class="row mt-12" style="gap:8px">
+      <button class="btn btn-ghost grow" onClick=${() => shareBook(b)}><${Icon} name="send" /> Share</button>
+      <a class="btn btn-ghost grow" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Look it up</a>
+    </div>
 
     ${status === 'reading' && html`<div class="card mt-16">
       <div class="between"><span class="section-title">Your progress</span><span class="conf-num">${item.progress || 0}%</span></div>
@@ -409,7 +412,8 @@ export function Genie() {
           </div>
           <div class="row mt-8" style="gap:8px">
             <button class="btn btn-ghost grow" onClick=${() => { addToShelf(b, 'finished').then(() => toast('Marked as read')).catch(() => toast('Could not save')); setDismissed((d) => [...d, b.title]); }}><${Icon} name="check" /> Read it</button>
-            <a class="btn btn-ghost grow" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> More info</a>
+            <button class="btn btn-ghost grow" onClick=${() => shareBook(b)}><${Icon} name="send" /> Share</button>
+            <a class="btn btn-ghost grow" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>
           </div>
           <button class="btn btn-ghost btn-block mt-8" style="color:var(--text-3)" onClick=${() => { neverRecommend(b.title, b.author).catch(() => {}); setDismissed((d) => [...d, b.title]); toast('Got it — I won’t suggest that again'); }}><${Icon} name="dnf" /> Never recommend this</button>
         </div>`;
