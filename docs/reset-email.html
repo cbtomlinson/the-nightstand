@@ -1,0 +1,46 @@
+<!--
+  The Nightstand — password reset email.
+  Paste the block below into Supabase → Authentication → Email Templates → "Reset password":
+    • Subject heading:  Reset your Nightstand password
+    • Message body:     everything from <table> to </table>
+  Supabase fills {{ .ConfirmationURL }} with the reset link; clicking it lands the
+  user in the app to choose a new password.
+-->
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#efe7d8;padding:32px 12px;font-family:Georgia,'Times New Roman',serif">
+  <tr>
+    <td align="center">
+      <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#fffdf8;border-radius:16px;border:1px solid #e7ddca;overflow:hidden">
+        <tr>
+          <td style="padding:36px 40px 8px;text-align:center">
+            <div style="font-size:40px;line-height:1">🌙</div>
+            <h1 style="margin:14px 0 0;font-size:24px;color:#2a2440;font-weight:normal;letter-spacing:.3px">The Nightstand</h1>
+            <div style="height:1px;width:44px;background:#d9b25f;margin:18px auto 0"></div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 40px 8px;color:#4a4458;font-size:16px;line-height:1.65;text-align:center">
+            Forgot your password? No worries — tap below to choose a new one and get back to your books.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:26px 40px 6px;text-align:center">
+            <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#2a2440;color:#f6efde;text-decoration:none;font-family:Georgia,serif;font-size:16px;padding:15px 34px;border-radius:999px;border:1px solid #3a3358">
+              Reset your password&nbsp;→
+            </a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:8px 40px 30px;color:#8a8398;font-size:13px;line-height:1.6;text-align:center">
+            The link is just for you and expires shortly.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 40px 30px;border-top:1px solid #f0e8d8;color:#b3ad9c;font-size:12px;line-height:1.6;text-align:center">
+            If you didn't request this, you can ignore this email — your password won't change.
+          </td>
+        </tr>
+      </table>
+      <div style="color:#b8b0a0;font-size:12px;margin-top:16px;font-family:Georgia,serif">Sent with care from The Nightstand 🌙</div>
+    </td>
+  </tr>
+</table>
