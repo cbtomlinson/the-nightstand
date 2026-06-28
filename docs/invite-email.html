@@ -1,9 +1,10 @@
 <!--
-  The Nightstand — invite-flavored magic-link email.
-  Paste the block below into Supabase → Authentication → Email Templates → "Magic Link":
-    • Subject heading:  You're invited to The Nightstand 🌙
+  The Nightstand — invite email.
+  Paste the block below into Supabase → Authentication → Email Templates → "Invite user":
+    • Subject heading:  You're invited to The Nightstand 📖
     • Message body:     everything from <table> to </table>
-  Supabase fills {{ .ConfirmationURL }} with the one-tap sign-in link.
+  Supabase fills {{ .ConfirmationURL }} with the invite link. The friend clicks it,
+  lands in the app, and chooses their own password.
 -->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#efe7d8;padding:32px 12px;font-family:Georgia,'Times New Roman',serif">
   <tr>
@@ -24,13 +25,13 @@
         <tr>
           <td style="padding:26px 40px 6px;text-align:center">
             <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#2a2440;color:#f6efde;text-decoration:none;font-family:Georgia,serif;font-size:16px;padding:15px 34px;border-radius:999px;border:1px solid #3a3358">
-              Open The Nightstand&nbsp;→
+              Accept your invite&nbsp;→
             </a>
           </td>
         </tr>
         <tr>
           <td style="padding:8px 40px 30px;color:#8a8398;font-size:13px;line-height:1.6;text-align:center">
-            One tap signs you in — no password to remember. The link is just for you and expires shortly.
+            Tap to set up your account and choose a password. The link is just for you and expires shortly.
           </td>
         </tr>
         <tr>
