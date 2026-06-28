@@ -147,8 +147,14 @@ function App() {
       } catch (_e) {}
     })();
 
-    // Safety net: never sit on the splash forever.
-    const timer = setTimeout(() => { if (active) setSt((p) => (p.loading ? { ...p, loading: false } : p)); }, 8000);
+    // Safety net: never sit on the splash. If the auth boot is slow, unstick the
+    // UI; then do one more session read so a session that just arrived still lands
+    // the user in the app (and the onAuth listener catches any later refresh too).
+    const timer = setTimeout(async () => {
+      if (!active) return;
+      setSt((p) => (p.loading ? { ...p, loading: false } : p));
+      try { const s = await getSession(); if (active && s) apply(s, null); } catch (_e) {}
+    }, 6000);
 
     return () => { active = false; clearTimeout(timer); try { if (sub) sub.unsubscribe(); } catch (_e) {} };
   }, []);
