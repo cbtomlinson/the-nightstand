@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
-import { sendMagicLink, joinWaitlist } from './auth.js';
+import { sendMagicLink, joinWaitlist, signOut } from './auth.js';
 import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
@@ -815,6 +815,9 @@ export function Profile() {
 
     <button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads</button>
     ${me.isOwner ? html`<button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/admin')}><${Icon} name="users" /> Admin console</button>` : ''}
+
+    ${me.email ? html`<p class="dim" style="font-size:11.5px;text-align:center;margin:18px 0 0">Signed in as ${me.email}</p>` : ''}
+    <button class="btn btn-ghost btn-block mt-8" style="color:var(--text-3)" onClick=${async () => { try { await signOut(); } catch (_e) {} location.reload(); }}><${Icon} name="user" /> Sign out</button>
   </div>`;
 }
 
