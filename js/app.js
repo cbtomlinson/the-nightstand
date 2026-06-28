@@ -98,6 +98,9 @@ function LoadingScreen() {
 
 function App() {
   const [st, setSt] = useState({ loading: true, session: null, profile: null, email: null, error: null });
+  // Set when arriving from an invite/reset link → show the set-password screen.
+  // Stored in sessionStorage so a reload mid-setup still lands on set-password.
+  const [needPw, setNeedPw] = useState(() => { try { return sessionStorage.getItem('rg_need_pw') === '1'; } catch (_e) { return false; } });
 
   useEffect(() => {
     // No backend configured yet → run the local (mock) app as before.
@@ -125,7 +128,14 @@ function App() {
     // boot error or race the first paint.
     (async () => {
       let bootError = null;
-      try { const r = await completeAuthRedirect(); if (r && r.error) bootError = r.error; } catch (_e) {}
+      try {
+        const r = await completeAuthRedirect();
+        if (r && r.error) bootError = r.error;
+        if (r && (r.type === 'invite' || r.type === 'recovery')) {
+          try { sessionStorage.setItem('rg_need_pw', '1'); } catch (_e) {}
+          if (active) setNeedPw(true);
+        }
+      } catch (_e) {}
       let session = null;
       try { session = await getSession(); } catch (_e) {}
       await apply(session, bootError);
@@ -146,6 +156,7 @@ function App() {
   if (st.loading) return html`<${LoadingScreen} />`;
   if (!isConfigured()) return html`<${Shell} />`;
   if (!st.session) return html`<${S.SignIn} bootError=${st.error} />`;
+  if (needPw) return html`<${S.SetPassword} email=${st.email} onDone=${() => { try { sessionStorage.removeItem('rg_need_pw'); } catch (_e) {} setNeedPw(false); }} />`;
   if (!st.profile) return html`<${S.NotInvited} email=${st.email} onSignOut=${signOut} />`;
   // New members (friends): walk them through onboarding before the app proper.
   if (st.profile && st.profile.onboarding_complete === false) {

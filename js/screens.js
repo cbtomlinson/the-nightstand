@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
-import { sendMagicLink, joinWaitlist, signOut } from './auth.js';
+import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
 import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
@@ -1024,13 +1024,15 @@ export function Onboarding() {
   </div>`;
 }
 
-/* ---------------- Sign in (magic link) ---------------- */
+/* ---------------- Sign in (email + password) ---------------- */
 export function SignIn({ bootError = null } = {}) {
   const brand = getBrand();
   const [mode, setMode] = useState('signin'); // 'signin' | 'waitlist'
-  // sign-in
+  // sign-in / forgot-password
+  const [view, setView] = useState('signin'); // 'signin' | 'forgot' | 'sent'
   const [email, setEmail] = useState('');
-  const [stage, setStage] = useState('idle'); // idle | sending | sent | error
+  const [pw, setPw] = useState('');
+  const [stage, setStage] = useState('idle'); // idle | working | error
   const [err, setErr] = useState('');
   // waitlist
   const [wName, setWName] = useState('');
@@ -1041,12 +1043,31 @@ export function SignIn({ bootError = null } = {}) {
 
   const submit = async (e) => {
     if (e) e.preventDefault();
+    if (stage === 'working') return;
     const addr = email.trim();
     if (!addr.includes('@')) { setErr('Please enter a valid email.'); setStage('error'); return; }
-    setStage('sending'); setErr('');
-    const { error } = await sendMagicLink(addr);
-    if (error) { setErr(error.message); setStage('error'); }
-    else setStage('sent');
+    if (!pw) { setErr('Enter your password.'); setStage('error'); return; }
+    setStage('working'); setErr('');
+    const { error } = await signInWithPassword(addr, pw);
+    if (error) {
+      const m = (error.message || '').toLowerCase();
+      let friendly = error.message || 'Could not sign in.';
+      if (m.includes('invalid login')) friendly = 'That email or password isn’t right. New here? Open your invite email to set your password.';
+      else if (m.includes('confirm')) friendly = 'Open the link in your invite email to finish setting up first.';
+      setErr(friendly); setStage('error');
+    }
+    // On success the auth listener in app.js re-renders into onboarding / the app.
+  };
+
+  const sendReset = async (e) => {
+    if (e) e.preventDefault();
+    if (stage === 'working') return;
+    const addr = email.trim();
+    if (!addr.includes('@')) { setErr('Enter your email first.'); setStage('error'); return; }
+    setStage('working'); setErr('');
+    const { error } = await resetPassword(addr);
+    if (error) { setErr(error.message || 'Could not send the reset link.'); setStage('error'); }
+    else { setStage('idle'); setView('sent'); }
   };
 
   const join = async (e) => {
@@ -1070,27 +1091,44 @@ export function SignIn({ bootError = null } = {}) {
       <button class=${'seg-item' + (mode === 'waitlist' ? ' active' : '')} onClick=${() => setMode('waitlist')}>Join the waitlist</button>
     </div>
 
-    ${bootError && html`<p class="rec-line warn" style="max-width:340px;margin:0 auto 14px"><${Icon} name="alert" /><span>Sign-in didn't complete: ${bootError}. Please request a new link and open it in this same browser.</span></p>`}
+    ${bootError && html`<p class="rec-line warn" style="max-width:340px;margin:0 auto 14px"><${Icon} name="alert" /><span>That didn't complete: ${bootError}. Open your invite or reset link again in this same browser.</span></p>`}
 
     ${mode === 'signin'
-      ? (stage === 'sent'
+      ? (view === 'sent'
         ? html`<div class="card center-col" style="gap:10px">
             <div class="badge-medal"><${Icon} name="mail" /></div>
             <div class="book-title">Check your email ✉️</div>
-            <p class="muted" style="line-height:1.55;margin:0">I sent a one-tap link to <b>${email}</b>. Open it <b>in this same browser</b> to sign in.</p>
-            <button class="btn btn-ghost btn-block mt-12" onClick=${() => setStage('idle')}>Use a different email</button>
+            <p class="muted" style="line-height:1.55;margin:0">If <b>${email}</b> has an account, a reset link is on its way. Open it to choose a new password.</p>
+            <button class="btn btn-ghost btn-block mt-12" onClick=${() => { setView('signin'); setStage('idle'); setErr(''); }}>Back to sign in</button>
           </div>`
-        : html`<form class="card" onSubmit=${submit}>
-            <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.5">The Nightstand is invite-only right now. If your email is on the guest list, sign in below.</p>
+        : view === 'forgot'
+        ? html`<form class="card" onSubmit=${sendReset}>
+            <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.5">Enter your email and we’ll send a link to reset your password.</p>
             <div class="field" style="margin-bottom:10px">
               <label>Your email</label>
               <input type="email" autocomplete="email" placeholder="you@example.com" value=${email} onInput=${(ev) => setEmail(ev.target.value)} />
             </div>
             ${stage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${err}</span></p>`}
-            <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'sending'}>
-              <${Icon} name="mail" /> ${stage === 'sending' ? 'Sending…' : 'Send me a magic link'}
+            <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'working'}>
+              <${Icon} name="mail" /> ${stage === 'working' ? 'Sending…' : 'Send reset link'}
             </button>
-            <p class="dim" style="font-size:12px;text-align:center;margin:12px 0 0">No password — we email a link that signs you in. Only invited emails get in.</p>
+            <p class="dim" style="font-size:12.5px;text-align:center;margin:12px 0 0"><a role="button" style="color:var(--gold);cursor:pointer" onClick=${() => { setView('signin'); setStage('idle'); setErr(''); }}>Back to sign in</a></p>
+          </form>`
+        : html`<form class="card" onSubmit=${submit}>
+            <p class="muted" style="margin:0 0 12px;font-size:13.5px;line-height:1.5">The Nightstand is invite-only. Sign in with your email and password.</p>
+            <div class="field" style="margin-bottom:10px">
+              <label>Your email</label>
+              <input type="email" autocomplete="email" placeholder="you@example.com" value=${email} onInput=${(ev) => setEmail(ev.target.value)} />
+            </div>
+            <div class="field" style="margin-bottom:10px">
+              <label>Password</label>
+              <input type="password" autocomplete="current-password" placeholder="Your password" value=${pw} onInput=${(ev) => setPw(ev.target.value)} />
+            </div>
+            ${stage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${err}</span></p>`}
+            <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'working'}>
+              <${Icon} name="user" /> ${stage === 'working' ? 'Signing in…' : 'Sign in'}
+            </button>
+            <p class="dim" style="font-size:12.5px;text-align:center;margin:12px 0 0">First time? Open your invite email to set your password · <a role="button" style="color:var(--gold);cursor:pointer" onClick=${() => { setView('forgot'); setStage('idle'); setErr(''); }}>Forgot password?</a></p>
           </form>`)
       : (wStage === 'joined'
         ? html`<div class="card center-col" style="gap:10px">
@@ -1132,6 +1170,48 @@ export function NotInvited({ email, onSignOut }) {
       <p>You're signed in${email ? html` as <b>${email}</b>` : ''}, but you're not on the guest list yet. Ask Chelsea to add your email to ${brand.name}, then sign in again.</p>
     </div>
     <button class="btn btn-block" onClick=${onSignOut}><${Icon} name="user" /> Sign out</button>
+  </div></main></div>`;
+}
+
+/* ---------------- Set a password (invite accept / password reset) ---------------- */
+export function SetPassword({ email, onDone }) {
+  const brand = getBrand();
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [stage, setStage] = useState('idle'); // idle | working | error
+  const [err, setErr] = useState('');
+
+  const save = async (e) => {
+    if (e) e.preventDefault();
+    if (stage === 'working') return;
+    if (pw.length < 6) { setErr('Password needs to be at least 6 characters.'); setStage('error'); return; }
+    if (pw !== pw2) { setErr('The two passwords don’t match.'); setStage('error'); return; }
+    setStage('working'); setErr('');
+    const { error } = await setPassword(pw);
+    if (error) { setErr(error.message || 'Could not save your password.'); setStage('error'); return; }
+    onDone && onDone();
+  };
+
+  return html`<div class="app"><main class="app-main"><div class="screen onb">
+    <div class="onb-hero">
+      <div class="familiar-lg">${brand.fam.art()}</div>
+      <h1>Welcome to ${brand.name} 🌙</h1>
+      <p>${email ? html`Setting up <b>${email}</b>. ` : ''}Pick a password you’ll use to sign in from now on.</p>
+    </div>
+    <form class="card" onSubmit=${save}>
+      <div class="field" style="margin-bottom:10px">
+        <label>New password</label>
+        <input type="password" autocomplete="new-password" placeholder="At least 6 characters" value=${pw} onInput=${(e) => setPw(e.target.value)} />
+      </div>
+      <div class="field" style="margin-bottom:10px">
+        <label>Confirm password</label>
+        <input type="password" autocomplete="new-password" placeholder="Type it again" value=${pw2} onInput=${(e) => setPw2(e.target.value)} />
+      </div>
+      ${stage === 'error' && html`<p class="rec-line warn" style="margin:0 0 10px"><${Icon} name="alert" /><span>${err}</span></p>`}
+      <button class="btn btn-primary btn-block btn-lg" type="submit" disabled=${stage === 'working'}>
+        <${Icon} name="sparkles" /> ${stage === 'working' ? 'Saving…' : 'Save password & continue'}
+      </button>
+    </form>
   </div></main></div>`;
 }
 
@@ -1318,7 +1398,7 @@ export function Admin() {
     const email = inviteEmail.trim();
     if (!email || inviting) return;
     setInviting(true);
-    try { const res = await adminAct('invite', { email }); setInviteEmail(''); await load(); toast((res && res.emailed) ? `Invited ${email} — sign-in email sent ✉️` : `Invited ${email} (couldn’t email — share the link)`); }
+    try { const res = await adminAct('invite', { email }); setInviteEmail(''); await load(); toast(res && res.already ? `${email} already has an account` : (res && res.emailed) ? `Invited ${email} — invite email sent ✉️` : `Invited ${email} (add again to resend the email)`); }
     catch (e) { toast(e.message || 'Could not invite'); }
     setInviting(false);
   };
@@ -1358,7 +1438,7 @@ export function Admin() {
           onKeyDown=${(e) => { if (e.key === 'Enter') invite(); }} />
         <button class="btn btn-primary" disabled=${inviting} onClick=${invite}><${Icon} name="plus" /> Invite</button>
       </div>
-      <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list and emails them a one-tap sign-in link.</p>
+      <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list and emails them an invite — they click it, set a password, and they’re in.</p>
     </div>
 
     ${(pending || []).length ? html`<div class="section-head"><span class="section-title">Pending invites</span></div>

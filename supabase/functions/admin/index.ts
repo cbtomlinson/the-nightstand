@@ -4,7 +4,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const OWNER_EMAIL = 'tomlinson.chelsea@gmail.com';
-const APP_URL = 'https://littletomato.dev/the-nightstand/'; // where invite magic-links land
+const APP_URL = 'https://littletomato.dev/the-nightstand/'; // where invite / reset links land
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -65,21 +65,25 @@ Deno.serve(async (req) => {
       return json({ members, pendingInvites, waitlist: waitlist || [] });
     }
 
-    // Invites work on an email (no userId needed).
+    // Invite = allowlist + send Supabase's "Invite user" email (service role).
+    // The friend clicks it, lands on the app already signed in, and sets their own
+    // password (see SetPassword in the client). inviteUserByEmail also creates the
+    // auth user, which fires the allowlist trigger to make their profile.
+    // Re-inviting someone who already has an account returns { already: true }.
     if (action === 'invite') {
       const email = String(body.email || '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json({ error: 'Enter a valid email.' }, 400);
       await admin.from('allowed_emails').upsert({ email }, { onConflict: 'email' });
-      await admin.from('waitlist').delete().ilike('email', email); // clear from waitlist if they were on it
-      // Best-effort: email them a one-tap sign-in link (via the configured SMTP / Resend).
-      let emailed = false;
+      let emailed = false, already = false;
       try {
-        const pub = createClient(url, anon);
-        const { error: otpErr } = await pub.auth.signInWithOtp({ email, options: { emailRedirectTo: APP_URL, shouldCreateUser: true } });
-        emailed = !otpErr;
-        if (otpErr) console.warn('[admin] invite email:', otpErr.message);
-      } catch (e) { console.warn('[admin] invite email threw:', String(e)); }
-      return json({ ok: true, emailed });
+        const { error: invErr } = await admin.auth.admin.inviteUserByEmail(email, { redirectTo: APP_URL });
+        if (invErr) {
+          const m = (invErr.message || '').toLowerCase();
+          if (m.includes('already') || m.includes('registered') || m.includes('exists')) already = true;
+          else console.warn('[admin] invite email:', invErr.message);
+        } else emailed = true;
+      } catch (e) { console.warn('[admin] invite threw:', String(e)); }
+      return json({ ok: true, emailed, already });
     }
     if (action === 'dismiss_waitlist') {
       const email = String(body.email || '').trim().toLowerCase();

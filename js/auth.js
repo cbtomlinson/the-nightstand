@@ -10,49 +10,61 @@ export function onAuth(cb) {
   return supabase.auth.onAuthStateChange((event, session) => cb(session, event));
 }
 
-export async function sendMagicLink(email) {
-  // Redirect back to wherever the app is being served from.
-  return supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: location.origin + location.pathname },
+export async function signInWithPassword(email, password) {
+  return supabase.auth.signInWithPassword({ email: (email || '').trim(), password });
+}
+
+// Send a password-reset email (also used if someone loses their invite link).
+// Supabase sends its "Reset password" template; the link lands back here with a
+// recovery token, which completeAuthRedirect turns into a session → set-password.
+export async function resetPassword(email) {
+  return supabase.auth.resetPasswordForEmail((email || '').trim(), {
+    redirectTo: location.origin + location.pathname,
   });
+}
+
+// Set/replace the signed-in user's password (invite accept + reset both use this).
+export async function setPassword(password) {
+  return supabase.auth.updateUser({ password });
 }
 
 export async function signOut() {
   return supabase.auth.signOut();
 }
 
-// Finish a magic-link sign-in. Supabase sends the user back to the app with the
-// session tokens (or an error) in the URL hash, e.g.
-//   /the-nightstand/#access_token=…&refresh_token=…&type=magiclink
+// Finish an email link. Supabase sends the user back to the app with the session
+// tokens (or an error) in the URL hash, e.g.
+//   /the-nightstand/#access_token=…&refresh_token=…&type=invite
 // We establish the session from those tokens, then strip them from the URL so
 // (a) the one-time tokens don't linger in history and (b) they don't collide with
-// the app's hash router. Returns { ok, error }. A no-op (and harmless) when the
-// URL carries no auth params, so it's safe to call on every load.
+// the app's hash router. `type` is 'invite' | 'recovery' | 'magiclink' | … — the
+// app uses 'invite'/'recovery' to prompt the user to set a password. Returns
+// { ok, error, type }. A no-op (harmless) when no auth params, so safe every load.
 export async function completeAuthRedirect() {
   let raw = '';
-  try { raw = (location.hash || '').replace(/^#\/?/, ''); } catch (_e) { return { ok: false, error: null }; }
-  if (!raw || !/(access_token|error|error_description)=/.test(raw)) return { ok: false, error: null };
+  try { raw = (location.hash || '').replace(/^#\/?/, ''); } catch (_e) { return { ok: false, error: null, type: null }; }
+  if (!raw || !/(access_token|error|error_description)=/.test(raw)) return { ok: false, error: null, type: null };
 
   const clean = () => {
     try { history.replaceState(null, '', location.pathname + location.search); } catch (_e) {}
   };
 
   const p = new URLSearchParams(raw);
+  const type = p.get('type') || null;
   const errDesc = p.get('error_description') || p.get('error');
-  if (errDesc) { clean(); return { ok: false, error: errDesc.replace(/\+/g, ' ') }; }
+  if (errDesc) { clean(); return { ok: false, error: errDesc.replace(/\+/g, ' '), type }; }
 
   const access_token = p.get('access_token');
   const refresh_token = p.get('refresh_token');
-  if (!access_token || !refresh_token) { clean(); return { ok: false, error: null }; }
+  if (!access_token || !refresh_token) { clean(); return { ok: false, error: null, type }; }
 
   try {
     const { error } = await supabase.auth.setSession({ access_token, refresh_token });
     clean();
-    return error ? { ok: false, error: error.message } : { ok: true, error: null };
+    return error ? { ok: false, error: error.message, type } : { ok: true, error: null, type };
   } catch (e) {
     clean();
-    return { ok: false, error: (e && e.message) || 'Could not complete sign-in.' };
+    return { ok: false, error: (e && e.message) || 'Could not complete sign-in.', type };
   }
 }
 
