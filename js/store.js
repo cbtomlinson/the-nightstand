@@ -149,6 +149,7 @@ async function refresh(userId, profile) {
         coverUrl: b.cover_url || null,
         tags: (b.meta && b.meta.tags) || [],
         pages: (b.meta && b.meta.pages) || null,
+        description: (b.meta && b.meta.description) || null,
       };
     }
     const item = {
@@ -157,6 +158,7 @@ async function refresh(userId, profile) {
       note: row.note, addedNote: row.added_note, source: row.source,
       atPct: row.dnf_at_pct, reason: row.dnf_reason,
       availability: row.availability || [], libbyHold: row.libby_hold || false,
+      createdAt: row.created_at,
     };
     if (shelves[row.status]) shelves[row.status].push(item);
   }
@@ -198,6 +200,31 @@ async function refresh(userId, profile) {
 
   set({ ready: true, error: null, me, profile: prof, booksById, shelves, stats });
   backfillCovers(booksById); // fire-and-forget: fill any missing covers
+}
+
+// Re-pull the current user's shelves into the store — call after the advisor may
+// have added a book server-side, so it appears without a full page reload.
+export async function reloadShelves() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
+    await refresh(user.id, profile);
+  } catch (_e) {}
+}
+
+// Cache a book's description on its row so we only ever fetch it once (kills the
+// slow, repeated description loads on book detail).
+export async function persistDescription(bookId, desc) {
+  if (!bookId || !desc) return;
+  try {
+    const cur = (getState().booksById || {})[bookId];
+    if (cur && cur.description) return; // already cached
+    const { data: bk } = await supabase.from('books').select('meta').eq('id', bookId).maybeSingle();
+    const meta = { ...((bk && bk.meta) || {}), description: desc };
+    await supabase.from('books').update({ meta }).eq('id', bookId);
+    if (cur) set({ booksById: { ...getState().booksById, [bookId]: { ...cur, description: desc } } });
+  } catch (_e) {}
 }
 
 // ── Covers everywhere ───────────────────────────────────────────────────────

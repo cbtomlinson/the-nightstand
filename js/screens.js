@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -128,11 +128,23 @@ export function Tour({ onClose }) {
 }
 
 /* ---------------- Shelf (home) ---------------- */
+function sortShelf(items, sortBy, booksById) {
+  const bk = (i) => (booksById && booksById[i.bookId]) || {};
+  const arr = [...items];
+  if (sortBy === 'title') arr.sort((a, b) => (bk(a).title || '').localeCompare(bk(b).title || ''));
+  else if (sortBy === 'author') arr.sort((a, b) => (bk(a).author || '').localeCompare(bk(b).author || ''));
+  else if (sortBy === 'libby') arr.sort((a, b) => (b.libbyHold ? 1 : 0) - (a.libbyHold ? 1 : 0));
+  else if (sortBy === 'avail') {
+    const av = (i) => ((i.availability && i.availability.length) || i.libbyHold) ? 1 : 0; // a Libby hold ⇒ it's on Libby
+    arr.sort((a, b) => av(b) - av(a));
+  } else arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)); // date added, newest first
+  return arr;
+}
+
 export function Shelf({ tab: initialTab }) {
   const st = useStore();
   const [tab, setTab] = useState(['reading', 'to_read', 'finished', 'dnf'].includes(initialTab) ? initialTab : 'to_read');
-  const [editingMood, setEditingMood] = useState(false);
-  const [moodDraft, setMoodDraft] = useState('');
+  const [sortBy, setSortBy] = useState('added'); // added | title | author | libby | avail
 
   if (!st.ready) {
     return html`<div class="screen"><div class="empty mt-20"><${Icon} name="books" /><div>Opening your shelves…</div></div></div>`;
@@ -143,15 +155,6 @@ export function Shelf({ tab: initialTab }) {
 
   return html`<div class="screen">
     <div class="screen-title">${greeting()}, ${st.me.name}</div>
-    <div class="screen-sub">Today’s mood: ${editingMood
-      ? html`<span style="display:inline-flex;gap:6px;align-items:center;vertical-align:middle">
-          <input value=${moodDraft} placeholder="how you’re feeling…" autofocus
-            style="background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;padding:4px 9px;font-size:13px;width:170px;max-width:55vw"
-            onInput=${(e) => setMoodDraft(e.target.value)}
-            onKeyDown=${(e) => { if (e.key === 'Enter') { setMyMood(moodDraft); setEditingMood(false); } else if (e.key === 'Escape') setEditingMood(false); }} />
-          <button class="icon-btn" style="width:30px;height:30px" aria-label="Save mood" onClick=${() => { setMyMood(moodDraft); setEditingMood(false); }}><${Icon} name="check" /></button>
-        </span>`
-      : html`<span class="gold" role="button" style="cursor:pointer;border-bottom:1px dashed var(--line-2)" onClick=${() => { setMoodDraft(st.me.mood || ''); setEditingMood(true); }}>${st.me.mood || 'set your mood'}</span>`}</div>
 
     <${WishCard} />
 
@@ -178,9 +181,21 @@ export function Shelf({ tab: initialTab }) {
       )}
     </div>
 
+    ${list.length > 1 ? html`<div class="row mt-12" style="justify-content:flex-end;align-items:center;gap:8px">
+      <span class="dim" style="font-size:12px">Sort</span>
+      <select value=${sortBy} onChange=${(e) => setSortBy(e.target.value)}
+        style="background:var(--bg-2);border:1px solid var(--line-2);border-radius:10px;color:var(--text);padding:6px 10px;font-size:13px">
+        <option value="added">Date added</option>
+        <option value="title">Title (A–Z)</option>
+        <option value="author">Author (A–Z)</option>
+        <option value="libby">Libby holds first</option>
+        <option value="avail">Available first</option>
+      </select>
+    </div>` : ''}
+
     ${list.length === 0
       ? html`<div class="empty"><${Icon} name="book" /><div>Nothing here yet.</div></div>`
-      : list.map((item) => {
+      : sortShelf(list, sortBy, st.booksById).map((item) => {
           const b = st.booksById[item.bookId];
           if (!b) return null;
           return html`<div class="book-row" onClick=${() => go('/book/' + b.id)} role="button">
@@ -240,13 +255,14 @@ export function BookDetail({ id }) {
     let alive = true;
     setGenDesc(null); setConfirmRm(false);
     if (advisorReady() && b && b.title) {
-      const fetchGen = () => advisorDescribe({ title: b.title, author: b.author || '' }).then((d) => { if (alive) setGenDesc(d); }).catch(() => {});
+      const fetchGen = () => advisorDescribe({ title: b.title, author: b.author || '' }).then((d) => { if (alive) { setGenDesc(d); if (d) persistDescription(id, d); } }).catch(() => {});
       advisorEnrich({ title: b.title, author: b.author || '' }).then((e) => {
         if (!alive) return;
         setEnrich(e);
         if (e && e.coverUrl) persistCover(id, e.coverUrl); // correct wrong-language covers everywhere
-        if (!e || !e.description) fetchGen(); // Google had no usable synopsis → ask Mabel
-      }).catch(() => { fetchGen(); });
+        if (e && e.description) { if (!b.description) persistDescription(id, e.description); }
+        else if (!b.description) fetchGen(); // no Google synopsis and none cached → ask Mabel
+      }).catch(() => { if (!b.description) fetchGen(); });
     }
     return () => { alive = false; };
   }, [id]);
@@ -282,7 +298,7 @@ export function BookDetail({ id }) {
     ${b.tags && b.tags.length ? html`<div class="tagrow mt-16">${b.tags.map((t) => html`<span class="tag">${t}</span>`)}</div>` : ''}
 
     ${(() => {
-      const aboutDesc = (enrich && enrich.description) || genDesc;
+      const aboutDesc = b.description || (enrich && enrich.description) || genDesc;
       const aboutRating = enrich && enrich.rating;
       if (!aboutDesc && !aboutRating) return '';
       return html`<div class="card mt-16">
@@ -951,6 +967,7 @@ function ChatThread({ seed, chips, followups, placeholder, sendFn, trigger, kick
         setTyping(false);
         setMsgs((m) => [...m, { me: false, text: escapeHtml(text) }]);
         setDynChips((res && res.suggestions) || []);
+        reloadShelves(); // surface any book the advisor just added to a shelf
       } catch (e) {
         console.warn('[advisor] falling back to scripted:', e && e.message);
         scripted();
@@ -1288,6 +1305,7 @@ function SearchResult({ b }) {
   const [open, setOpen] = useState(false);
   const [enrich, setEnrich] = useState(undefined); // undefined = not fetched, null = none
   const [loadingE, setLoadingE] = useState(false);
+  const [genDesc, setGenDesc] = useState(''); // Claude fallback synopsis when Google has none
   const [added, setAdded] = useState(null);        // shelf label once added
   const [addedStatus, setAddedStatus] = useState(null); // which shelf key (for the active button)
   const [busy, setBusy] = useState(false);
@@ -1297,7 +1315,11 @@ function SearchResult({ b }) {
     if (nx && enrich === undefined && !loadingE && advisorReady()) {
       setLoadingE(true);
       advisorEnrich({ title: b.title, author: b.author || '' })
-        .then((e) => setEnrich(e || null)).catch(() => setEnrich(null))
+        .then((e) => {
+          setEnrich(e || null);
+          if (!e || !e.description) advisorDescribe({ title: b.title, author: b.author || '' }).then((d) => { if (d) setGenDesc(d); }).catch(() => {});
+        })
+        .catch(() => setEnrich(null))
         .finally(() => setLoadingE(false));
     }
   };
@@ -1315,7 +1337,7 @@ function SearchResult({ b }) {
   };
 
   const cover = (enrich && enrich.coverUrl) || b.coverUrl;
-  const desc = enrich && enrich.description ? stripHtml(enrich.description) : '';
+  const desc = (enrich && enrich.description) ? stripHtml(enrich.description) : (genDesc ? stripHtml(genDesc) : '');
 
   return html`<div class="card" style="padding:13px">
     <div class="book-row" onClick=${toggle} role="button">
