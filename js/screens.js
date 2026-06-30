@@ -134,10 +134,7 @@ function sortShelf(items, sortBy, booksById) {
   if (sortBy === 'title') arr.sort((a, b) => (bk(a).title || '').localeCompare(bk(b).title || ''));
   else if (sortBy === 'author') arr.sort((a, b) => (bk(a).author || '').localeCompare(bk(b).author || ''));
   else if (sortBy === 'libby') arr.sort((a, b) => (b.libbyHold ? 1 : 0) - (a.libbyHold ? 1 : 0));
-  else if (sortBy === 'avail') {
-    const av = (i) => ((i.availability && i.availability.length) || i.libbyHold) ? 1 : 0; // a Libby hold ⇒ it's on Libby
-    arr.sort((a, b) => av(b) - av(a));
-  } else arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)); // date added, newest first
+  else arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)); // date added, newest first
   return arr;
 }
 
@@ -189,7 +186,6 @@ export function Shelf({ tab: initialTab }) {
         <option value="title">Title (A–Z)</option>
         <option value="author">Author (A–Z)</option>
         <option value="libby">Libby holds first</option>
-        <option value="avail">Available first</option>
       </select>
     </div>` : ''}
 

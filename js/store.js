@@ -311,6 +311,7 @@ export async function importShelf(rows, onProgress) {
 
 // Remove a book from the shelves entirely (no status change, just gone).
 export async function removeFromShelf(itemId) {
+  removeLocalShelfItem(itemId); // instant — drop it from the shelf right away
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const { error } = await supabase.from('shelf_items').delete().eq('id', itemId);
@@ -344,13 +345,41 @@ export async function completeOnboarding() {
 }
 
 // Update arbitrary fields on a shelf item (availability, libby_hold, …).
+// Optimistically patch / drop a shelf item in local state so toggles (Libby hold,
+// availability, progress…) and removals feel INSTANT instead of waiting on a full
+// DB round-trip (which is why the Libby button & remove looked like no-ops).
+const ITEM_FIELD_MAP = { libby_hold: 'libbyHold', dnf_at_pct: 'atPct', dnf_reason: 'reason', added_note: 'addedNote' };
+function patchLocalShelfItem(itemId, patch) {
+  const s = getState();
+  if (!s.shelves) return;
+  const shelves = { to_read: [...(s.shelves.to_read || [])], reading: [...(s.shelves.reading || [])], finished: [...(s.shelves.finished || [])], dnf: [...(s.shelves.dnf || [])] };
+  for (const k of Object.keys(shelves)) {
+    const idx = shelves[k].findIndex((i) => i.id === itemId);
+    if (idx >= 0) {
+      const local = { ...shelves[k][idx] };
+      for (const [field, val] of Object.entries(patch)) local[ITEM_FIELD_MAP[field] || field] = val;
+      shelves[k][idx] = local;
+      set({ shelves });
+      return;
+    }
+  }
+}
+function removeLocalShelfItem(itemId) {
+  const s = getState();
+  if (!s.shelves) return;
+  const shelves = {};
+  for (const k of ['to_read', 'reading', 'finished', 'dnf']) shelves[k] = (s.shelves[k] || []).filter((i) => i.id !== itemId);
+  set({ shelves });
+}
+
 export async function updateShelfItem(itemId, patch) {
+  patchLocalShelfItem(itemId, patch); // instant feedback
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const { error } = await supabase.from('shelf_items')
     .update({ ...patch, updated_at: new Date().toISOString() }).eq('id', itemId);
   if (error) { console.error('[store] updateShelfItem:', error.message); throw error; }
-  await refresh(user.id, await fetchProfile(user.id));
+  await refresh(user.id, await fetchProfile(user.id)); // reconcile (covers shelf moves)
 }
 
 // "Never recommend this" — kept in the reading profile so the advisor excludes

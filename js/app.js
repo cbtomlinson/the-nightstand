@@ -165,9 +165,12 @@ function App() {
     // Note an invite/reset arrival synchronously (before any await) so a slow
     // setSession can't lose the signal to show the set-password screen.
     try {
-      if (/type=(invite|recovery)/.test(location.hash || '')) {
+      const h = location.hash || '';
+      if (/type=(invite|recovery)/.test(h)) {
         try { sessionStorage.setItem('rg_need_pw', '1'); } catch (_e) {}
         if (active) setNeedPw(true);
+        // A password reset is an existing user — don't replay the first-run tour.
+        if (/type=recovery/.test(h)) { try { localStorage.setItem('rg_tour_seen', '1'); } catch (_e) {} }
       }
     } catch (_e) {}
 
