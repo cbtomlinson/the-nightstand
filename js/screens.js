@@ -359,7 +359,7 @@ export function BookDetail({ id }) {
       <div class="section-title">Where to find it</div>
       <div class="tagrow mt-8">
         ${['Libby', 'Kindle Unlimited', 'Audible', 'Spotify'].map((key) => {
-          const on = (item.availability || []).includes(key);
+          const on = (item.availability || []).includes(key) || (key === 'Libby' && item.libbyHold); // a Libby hold ⇒ it's on Libby
           return html`<button class=${'tag' + (on ? ' love' : '')} disabled=${busy}
             onClick=${() => run(() => updateShelfItem(item.id, { availability: on ? item.availability.filter((x) => x !== key) : [...(item.availability || []), key] }), () => toast(on ? 'Removed ' + key : 'Marked on ' + key))}>${on ? '✓ ' : ''}${key}</button>`;
         })}
