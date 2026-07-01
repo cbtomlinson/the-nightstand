@@ -11,23 +11,25 @@ Things we've intentionally deferred (not bugs — decisions or future phases).
 
 ## Phase 3 — the social model (designed 2026-06-28 with Chelsea; not built yet)
 Designed via interview. Vibe: **cozy + private by default**, StoryGraph-leaning (not
-Goodreads' broadcast-everything). Three layers — Circle → Clubs → Buddy reads:
-- **Circle** — your *personal* set of friends (you ↔ each person), **ego-centric**: your
+Goodreads' broadcast-everything). Three layers — Circle -> Reading Rooms -> Buddy reads:
+- **Circle** — your *personal* set of friends (you <-> each person), **ego-centric**: your
   friends do NOT see each other through it; only you see all of them (you're the hub). This
   makes "Kevin close, but not mixed in with my girlfriends" work *for free* — unconnected
   people never see each other. (How people enter your circle: TBD — likely auto on invite,
   since it's invite-only + small.)
-- **Clubs** — persistent named *group rooms* where everyone in the club sees everyone else:
-  a shared wall (ongoing group chatter / recs / reactions, NOT tied to one book), an optional
-  pinned **group read**, a "books we've read together" shelf, and an identity (name + emoji/
-  color). Scales 2→many (a 2-person "Family" club with Kevin is fine). ⚠️ **TO-DO: brainstorm
-  a better term than "Clubs"** — might find something better.
+- **Reading Rooms** (✅ name decided 2026-06-28 — was "Clubs") — persistent named *group
+  rooms* where everyone in the room sees everyone else: a shared wall (ongoing group chatter /
+  recs / reactions, NOT tied to one book), an optional pinned **group read**, a "books we've
+  read together" shelf, and an identity (name + emoji/color). Scales 2->many (a 2-person
+  "Family" room with Kevin is fine).
 - **Buddy reads** — the *reading-together* mechanic: 1+ people on one book, **flexible/chill**
-  (jump in partway, NOT synced to page 1), with progress + discussion. Works 1:1 OR as a club's
+  (jump in partway, NOT synced to page 1), with progress + discussion. Works 1:1 OR as a room's
   pinned read (the two compose). Spoilers: **open / honor-system for v1** (small trusted group);
   **progress-gated comments = future enhancement** (StoryGraph-style hide-past-your-progress).
-- **Cozy feed ("Reading Room")** — ambient, ego-centric glimpses of YOUR circle: currently-
-  reading, **"just finished" moments**, and **reactions** (😍/👏). Passive — no page-visiting.
+- **Cozy feed** — ambient, ego-centric glimpses of YOUR circle: currently-reading, **"just
+  finished" moments**, and **reactions**. Passive — no page-visiting. (Lives in the Circle
+  view; since "Reading Rooms" now names the group spaces, the feed itself gets a plainer label
+  — probably just the home/Circle tab.)
 
 **Visibility / privacy (decided):** **private by default.** Your **shelves are yours alone** —
 nobody browses them. Shared signals only: currently-reading, just-finished, reactions, recs,
@@ -35,44 +37,56 @@ and buddy-read progress + discussion. **Taste-match %** still works — computed
 so it shows just the number without exposing anyone's books. ("Recommend a book to a friend"
 already exists today.)
 
-Build notes: new `circles`/`circle_members` + clubs/club_members tables (or one unified groups
-table), buddy-read tables (a `buddy_reads` table + `BuddyRead` component template already exist;
-`#/buddy` route is off), RLS scoped by connection/club membership, a feed query, reactions.
-Keep it multi-tenant-friendly (no new owner-specific hardcoding).
+Build notes: new `circles`/`circle_members` + `reading_rooms`/`room_members` tables (or one
+unified groups table), buddy-read tables (a `buddy_reads` table + `BuddyRead` component template
+already exist; `#/buddy` route is off), RLS scoped by connection/room membership, a feed query,
+reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 
 **Build progress + queue:**
 - ✅ **Slice 1 (shipped 2026-06-28):** connections table + ego-centric Circle; privacy tightened
   (shelves private, currently-reading shared only with connections); Circle screen shows friends
-  + their current read; **tappable friend cards** → current reads as rich cards (cover, AI
-  description, ＋TBR, share, look-it-up, recommend); **PWA reload** (top-bar refresh button +
+  + their current read; **tappable friend cards** -> current reads as rich cards (cover, AI
+  description, +TBR, share, look-it-up, recommend); **PWA reload** (top-bar refresh button +
   pull-to-refresh gesture for installed/standalone apps).
-- ⏭️ **Slice 2 — the cozy feed:** the Reading Room = ambient glimpses of your circle, namely
-  **"just finished" moments** + **reactions** (😍/👏). Passive, no page-visiting.
+- ⏭️ **Slice 2 — the cozy feed:** ambient glimpses of your circle, namely **"just finished"
+  moments** + **reactions**. Passive, no page-visiting.
 - ⏭️ **Slice 3 — buddy reads:** flexible (1+ people, jump in anytime), progress + discussion
   (open / honor-system spoilers for v1). Wire the existing `BuddyRead` template; turn the
   `#/buddy` route back on.
-- ⏭️ **Slice 4 — Reading Rooms** (the renamed "Clubs"): persistent group rooms with a shared
-  wall, optional pinned group read, and a "books we've read together" shelf.
+- ⏭️ **Slice 4 — Reading Rooms:** persistent group rooms with a shared wall, optional pinned
+  group read, and a "books we've read together" shelf.
 - ⏭️ **Taste-match %** — NOT built (was only a mockup label). Needs a **server-side** function
-  (compare both users' loved/disliked + shared books + rating agreement → return just the %,
+  (compare both users' loved/disliked + shared books + rating agreement -> return just the %,
   since shelves are now private), AND enough reading data to be meaningful — do it once Chelsea
   + Kevin have logged some books, else it just shows a sad 0%.
 
 ## Phase 4 — going live for phones  ✅ mostly done (2026-06-27)
 - ✅ Deployed live at **https://littletomato.dev/the-nightstand/** (GitHub Pages, public repo).
-- ✅ Supabase Auth redirect URL added — magic-link sign-in confirmed working end-to-end.
-- ✅ **Custom SMTP (Resend)** — done: domain `littletomato.dev` verified, wired into Supabase
-  (sender `nightstand@littletomato.dev`); the ~3–4/hr cap is gone.
+- ✅ Auth: switched to **email + password** with console **"Invite user"** emails (Resend SMTP);
+  invite -> set-password -> onboarding. Magic links removed.
+- ✅ Fixed the intermittent **"opening the library" hang** (serialized auth-token refresh; no
+  Web Locks) + a 6s splash safety net with a Reload button.
 - ⏳ **Re-enable the service worker** for a *true* installable/offline PWA. Current state:
   the SW is **completely off** — nothing calls `navigator.serviceWorker.register()`, and
   `index.html` actively **unregisters any SW + clears all caches on every load** (leftover
-  "dev mode" code). `service-worker.js` (cache-v8, cache-first app shell) exists but is dead
-  code until registered. To turn it on, when ready: (1) register the SW (e.g. in `app.js`),
-  (2) remove the unregister/cache-clear block in `index.html`, (3) adopt **cache-bump
-  discipline** — bump `CACHE` in `service-worker.js` on every JS/CSS change so installed
-  clients pull fresh code (this is the "why am I seeing old code" trap). **Deliberately
-  deferred past Beta** — keeping it off means everyone always gets the latest on reload,
-  which is what we want while iterating. _(Chelsea asked to park this — 2026-06-27.)_
+  "dev mode" code). To turn it on, when ready: (1) register the SW, (2) remove the unregister/
+  cache-clear block in `index.html`, (3) adopt **cache-bump discipline** — bump `CACHE` in
+  `service-worker.js` on every JS/CSS change so installed clients pull fresh code. **Deliberately
+  deferred past Beta** — keeping it off means everyone always gets the latest on reload. NOTE:
+  this is also the fix for the **"stale cache / still seeing old code until a hard reload"** trap
+  we keep hitting during testing. _(Chelsea asked to park this — 2026-06-27.)_
+
+## Enhancements (discussed, not built — 2026-06-28)
+- **Background description pre-fetch.** Descriptions are now *cached* after first load (instant on
+  reopen), but the *first* open of a book is still a beat slow. Fix: quietly pre-fetch + cache
+  descriptions for your shelf books in the background (same trick as covers) so a book is ready
+  the moment you open it. Plus a subtle shimmer for the rare uncached one.
+- **Save "revisit a finished book" conversations.** Post-read reflection chats currently vanish
+  when you leave. The `reflections` table already exists — persist the transcript so you can
+  reopen a book and see "here's what you said last time" (also feeds Mabel's understanding).
+- **More import sources for a data-rich profile seed.** No Kindle scraping (no public API + ToS).
+  But the **Goodreads CSV importer already exists** in onboarding; add a **StoryGraph CSV** parser
+  and optionally parse Amazon's official **"Request My Data"** Kindle export.
 
 ## Product direction (someday) — Chelsea's roadmap
 Staying **invite-only for Chelsea + friends** for now. Possible futures (noted 2026-06-27):
@@ -90,3 +104,5 @@ Staying **invite-only for Chelsea + friends** for now. Possible futures (noted 2
 ## Nice-to-haves
 - Let ratings of 2–4 (not just 1/5) nudge the profile, if useful.
 - A way to edit a finished book's note (currently set via the advisor only).
+- Waitlist table exists now; the public "join the waitlist" form works — revisit its copy/flow
+  when opening up beyond the inner circle.
