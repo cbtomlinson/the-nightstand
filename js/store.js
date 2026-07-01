@@ -465,6 +465,42 @@ export async function getCircle() {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// How many unread friend recommendations are waiting (for the "new pick" badge).
+export async function getPendingRecCount() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return 0;
+  const { count } = await supabase.from('recommendations')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', user.id).eq('source', 'friend').eq('status', 'pending');
+  return count || 0;
+}
+
+// The cozy feed: your circle's currently-reading + recently-finished, newest first.
+// (RLS shares only currently-reading + finishes from the last ~30 days — not shelves.)
+export async function getFeed() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data: conns } = await supabase.from('connections')
+    .select('user_a, user_b').or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
+  const ids = (conns || []).map((c) => (c.user_a === user.id ? c.user_b : c.user_a));
+  if (!ids.length) return [];
+  const [{ data: profs }, { data: items }] = await Promise.all([
+    supabase.from('profiles').select('id, display_name, email').in('id', ids),
+    supabase.from('shelf_items').select('user_id, status, rating, updated_at, books(id, title, author, cover_url, cover_color)')
+      .in('user_id', ids).in('status', ['reading', 'finished']).order('updated_at', { ascending: false }).limit(40),
+  ]);
+  const nameById = {};
+  for (const p of (profs || [])) nameById[p.id] = p.display_name || (p.email || '').split('@')[0] || 'Reader';
+  return (items || []).filter((i) => i.books).map((i) => {
+    const nm = nameById[i.user_id] || 'A reader';
+    return {
+      who: nm, initial: (nm[0] || 'R').toUpperCase(), userId: i.user_id,
+      type: i.status, rating: i.rating || 0, when: i.updated_at,
+      book: { id: i.books.id, title: i.books.title, author: i.books.author, coverUrl: i.books.cover_url, cover: i.books.cover_color },
+    };
+  });
+}
+
 // Recommend a book to one or more friends, with an optional note.
 export async function recommendToFriends(mb, friendIds, note) {
   const { data: { user } } = await supabase.auth.getUser();

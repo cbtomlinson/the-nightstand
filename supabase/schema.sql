@@ -361,7 +361,8 @@ $$;
 
 -- Tighten visibility now that there's a real graph:
 --  • profiles: you see only yourself + people you're connected to.
---  • shelves : yours stay private; connected friends see ONLY your currently-reading.
+--  • shelves : yours stay private; connected friends see your currently-reading +
+--    finishes from the last ~30 days (for the cozy feed) — never your whole shelf.
 drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select
   using (id = auth.uid() or public.are_connected(auth.uid(), id));
@@ -369,7 +370,10 @@ create policy profiles_select on public.profiles for select
 drop policy if exists shelf_select on public.shelf_items;
 create policy shelf_select on public.shelf_items for select using (
   user_id = auth.uid()
-  or (is_public and status = 'reading' and public.are_connected(auth.uid(), user_id))
+  or (is_public and public.are_connected(auth.uid(), user_id) and (
+    status = 'reading'
+    or (status = 'finished' and updated_at > now() - interval '30 days')
+  ))
 );
 
 -- One-time backfill: connect the owner to every other existing member so the

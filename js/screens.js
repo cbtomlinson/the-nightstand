@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -26,7 +26,10 @@ function greeting() {
 
 function WishCard() {
   const brand = getBrand();
+  const [pending, setPending] = useState(0);
+  useEffect(() => { getPendingRecCount().then(setPending).catch(() => {}); }, []);
   return html`<div class="hero" onClick=${() => go('/genie')} role="button">
+    ${pending > 0 ? html`<span style="position:absolute;top:12px;right:14px;background:var(--gold);color:#1a1330;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;z-index:2"><${Icon} name="mail" size=${13} /> ${pending}</span>` : ''}
     <div class="hero-familiar">${brand.fam.art()}</div>
     <span class="spark s1"><${Icon} name="sparkle" /></span>
     <span class="spark s2"><${Icon} name="sparkle" /></span>
@@ -34,7 +37,7 @@ function WishCard() {
     <span class="spark s4"><${Icon} name="sparkle" /></span>
     <div class="hero-kicker">Your advisor</div>
     <div class="hero-title">Your next read</div>
-    <div class="hero-sub">Tell the advisor your mood and you’ll get a book you’ll actually love.</div>
+    <div class="hero-sub">${pending > 0 ? html`<b class="gold">${pending} new pick${pending > 1 ? 's' : ''} from your circle</b> — plus tell the advisor your mood for more.` : 'Tell the advisor your mood and you’ll get a book you’ll actually love.'}</div>
     <button class="btn btn-primary"><${Icon} name="sparkles" /> Consult your advisor</button>
   </div>`;
 }
@@ -440,8 +443,26 @@ export function Genie() {
     return parts.join(', ');
   });
 
+  const circleRecsBlock = circleRecs.length ? html`<div class="section-head"><span class="section-title">From your circle</span></div>
+    ${circleRecs.map((rec) => html`<div class="card">
+      <div class="book-row">
+        <${BookCover} book=${rec.book} />
+        <div class="book-meta">
+          <div class="book-title">${rec.book.title}</div>
+          <div class="book-author">${rec.book.author}</div>
+          <div class="rec-line good" style="margin-top:6px"><${Icon} name="heart" /><span><b>${rec.by}</b> thinks you’ll love this.</span></div>
+          ${rec.note ? html`<p class="rec-line" style="margin-top:4px"><${Icon} name="sparkle" /><span>“${rec.note}”</span></p>` : ''}
+        </div>
+      </div>
+      <div class="row mt-12" style="gap:8px">
+        <button class="btn btn-primary grow" onClick=${() => respondRec(rec, 'accepted')}><${Icon} name="plus" /> Add to shelf</button>
+        <button class="btn" onClick=${() => respondRec(rec, 'dismissed')}>Dismiss</button>
+      </div>
+    </div>`)}` : '';
+
   return html`<div class="screen">
     <div class="screen-title">Your next read</div>
+    ${circleRecsBlock}
     <div class="screen-sub">Every recommendation is a hypothesis — I’ll show my reasoning and my confidence.</div>
 
     <div class="card">
@@ -456,22 +477,6 @@ export function Genie() {
       ${loading && html`<div class="dim" style="font-size:12.5px;text-align:center;margin-top:10px">Mabel is reading your shelves — this can take a moment.</div>`}
     </div>
 
-    ${circleRecs.length ? html`<div class="section-head"><span class="section-title">From your circle</span></div>
-      ${circleRecs.map((rec) => html`<div class="card">
-        <div class="book-row">
-          <${BookCover} book=${rec.book} />
-          <div class="book-meta">
-            <div class="book-title">${rec.book.title}</div>
-            <div class="book-author">${rec.book.author}</div>
-            <div class="rec-line good" style="margin-top:6px"><${Icon} name="heart" /><span><b>${rec.by}</b> thinks you’ll love this.</span></div>
-            ${rec.note ? html`<p class="rec-line" style="margin-top:4px"><${Icon} name="sparkle" /><span>“${rec.note}”</span></p>` : ''}
-          </div>
-        </div>
-        <div class="row mt-12" style="gap:8px">
-          <button class="btn btn-primary grow" onClick=${() => respondRec(rec, 'accepted')}><${Icon} name="plus" /> Add to shelf</button>
-          <button class="btn" onClick=${() => respondRec(rec, 'dismissed')}>Dismiss</button>
-        </div>
-      </div>`)}` : ''}
 
     ${!loading && recs === null ? html`<div class="card center-col" style="gap:8px;padding:22px 16px">
       <div class="muted" style="font-size:13.5px;text-align:center;line-height:1.5">Tap <b>Consult your advisor</b> and I’ll choose a few books for your taste and mood — each with my reasoning and confidence.</div>
@@ -709,16 +714,40 @@ export function Fit({ id }) {
 
 /* ---------------- Feed ---------------- */
 export function Feed() {
+  const [feed, setFeed] = useState(null);
+  useEffect(() => { getFeed().then(setFeed).catch(() => setFeed([])); }, []);
+  const ago = (ts) => {
+    if (!ts) return '';
+    const d = Math.max(0, (Date.now() - new Date(ts).getTime()) / 86400000);
+    if (d < 1) return 'today';
+    if (d < 2) return 'yesterday';
+    if (d < 7) return Math.floor(d) + 'd ago';
+    return Math.floor(d / 7) + 'w ago';
+  };
   return html`<div class="screen">
     <div class="screen-title">The Reading Room</div>
-    <div class="screen-sub">What your circle is reading, finishing, and arguing about.</div>
+    <div class="screen-sub">What your circle is reading and finishing.</div>
 
-    <div class="card center-col" style="gap:10px;padding:30px 20px">
-      <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px;background:var(--lilac-soft);color:var(--lilac);box-shadow:none"><${Icon} name="users" /></div>
-      <div class="book-title">It’s quiet in here… for now</div>
-      <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">When your circle joins The Nightstand, you’ll see what everyone’s reading, finishing, and arguing about right here.</p>
-      <button class="btn btn-block mt-8" onClick=${() => go('/friends')}><${Icon} name="users" /> Your circle</button>
-    </div>
+    ${feed === null
+      ? html`<div class="card center-col" style="padding:26px"><div class="dim">Opening the room…</div></div>`
+      : feed.length === 0
+        ? html`<div class="card center-col" style="gap:10px;padding:30px 20px">
+            <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px;background:var(--lilac-soft);color:var(--lilac);box-shadow:none"><${Icon} name="users" /></div>
+            <div class="book-title">It’s quiet in here… for now</div>
+            <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">As your circle reads and finishes books, you’ll catch cozy little glimpses of it here.</p>
+            <button class="btn btn-block mt-8" onClick=${() => go('/friends')}><${Icon} name="users" /> Your circle</button>
+          </div>`
+        : feed.map((f) => html`<div class="card" onClick=${() => go('/friend/' + f.userId)} role="button" style="cursor:pointer">
+            <div class="row" style="gap:12px;align-items:center">
+              <${Avatar} initial=${f.initial} color="#e9b85c" />
+              <div class="grow" style="min-width:0">
+                <div class="book-note">${f.type === 'finished' ? html`<b>${f.who}</b> just finished ✨` : html`<b>${f.who}</b> is reading`}${f.when ? html` · <span class="dim">${ago(f.when)}</span>` : ''}</div>
+                <div class="book-title" style="word-break:break-word;margin-top:2px">${f.book.title}</div>
+                ${f.type === 'finished' && f.rating ? html`<div style="margin-top:4px"><${Stars} n=${f.rating} /></div>` : ''}
+              </div>
+              <${BookCover} book=${f.book} />
+            </div>
+          </div>`)}
   </div>`;
 }
 
