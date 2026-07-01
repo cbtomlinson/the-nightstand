@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -26,10 +26,7 @@ function greeting() {
 
 function WishCard() {
   const brand = getBrand();
-  const [pending, setPending] = useState(0);
-  useEffect(() => { getPendingRecCount().then(setPending).catch(() => {}); }, []);
   return html`<div class="hero" onClick=${() => go('/genie')} role="button">
-    ${pending > 0 ? html`<span style="position:absolute;top:12px;right:14px;background:var(--gold);color:#1a1330;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;z-index:2"><${Icon} name="mail" size=${13} /> ${pending}</span>` : ''}
     <div class="hero-familiar">${brand.fam.art()}</div>
     <span class="spark s1"><${Icon} name="sparkle" /></span>
     <span class="spark s2"><${Icon} name="sparkle" /></span>
@@ -37,7 +34,7 @@ function WishCard() {
     <span class="spark s4"><${Icon} name="sparkle" /></span>
     <div class="hero-kicker">Your advisor</div>
     <div class="hero-title">Your next read</div>
-    <div class="hero-sub">${pending > 0 ? html`<b class="gold">${pending} new pick${pending > 1 ? 's' : ''} from your circle</b> — plus tell the advisor your mood for more.` : 'Tell the advisor your mood and you’ll get a book you’ll actually love.'}</div>
+    <div class="hero-sub">Tell the advisor your mood and you’ll get a book you’ll actually love.</div>
     <button class="btn btn-primary"><${Icon} name="sparkles" /> Consult your advisor</button>
   </div>`;
 }
@@ -724,6 +721,16 @@ export function Feed() {
     if (d < 7) return Math.floor(d) + 'd ago';
     return Math.floor(d / 7) + 'w ago';
   };
+  const react = async (f, emoji, mine) => {
+    setFeed((prev) => (prev || []).map((x) => {
+      if (x.id !== f.id) return x;
+      const rx = { ...(x.reactions || {}) };
+      const cur = rx[emoji] || { count: 0, mine: false };
+      rx[emoji] = { count: Math.max(0, cur.count + (mine ? -1 : 1)), mine: !mine };
+      return { ...x, reactions: rx };
+    }));
+    try { await toggleReaction(f.id, emoji, mine); } catch (_e) {}
+  };
   return html`<div class="screen">
     <div class="screen-title">The Reading Room</div>
     <div class="screen-sub">What your circle is reading and finishing.</div>
@@ -746,6 +753,12 @@ export function Feed() {
                 ${f.type === 'finished' && f.rating ? html`<div style="margin-top:4px"><${Stars} n=${f.rating} /></div>` : ''}
               </div>
               <${BookCover} book=${f.book} />
+            </div>
+            <div class="tagrow" style="margin-top:10px;gap:6px" onClick=${(e) => e.stopPropagation()}>
+              ${['❤️', '😍', '👏'].map((emoji) => {
+                const r = (f.reactions && f.reactions[emoji]) || { count: 0, mine: false };
+                return html`<button class="tag" style=${'padding:4px 11px;font-size:14px' + (r.mine ? ';background:var(--gold-soft);border-color:var(--gold)' : '')} onClick=${(e) => { e.stopPropagation(); react(f, emoji, r.mine); }}>${emoji}${r.count ? html` <span style="font-size:12px;font-weight:600">${r.count}</span>` : ''}</button>`;
+              })}
             </div>
           </div>`)}
   </div>`;

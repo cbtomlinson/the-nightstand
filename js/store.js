@@ -491,14 +491,39 @@ export async function getFeed() {
   ]);
   const nameById = {};
   for (const p of (profs || [])) nameById[p.id] = p.display_name || (p.email || '').split('@')[0] || 'Reader';
-  return (items || []).filter((i) => i.books).map((i) => {
+  const list = (items || []).filter((i) => i.books).map((i) => {
     const nm = nameById[i.user_id] || 'A reader';
     return {
-      who: nm, initial: (nm[0] || 'R').toUpperCase(), userId: i.user_id,
+      id: i.id, who: nm, initial: (nm[0] || 'R').toUpperCase(), userId: i.user_id,
       type: i.status, rating: i.rating || 0, when: i.updated_at,
       book: { id: i.books.id, title: i.books.title, author: i.books.author, coverUrl: i.books.cover_url, cover: i.books.cover_color },
+      reactions: {},
     };
   });
+  // Attach reactions per item (best-effort — table may not exist until the migration runs).
+  const itemIds = list.map((f) => f.id);
+  if (itemIds.length) {
+    try {
+      const { data: rx } = await supabase.from('reactions').select('item_id, emoji, user_id').in('item_id', itemIds);
+      const byItem = {};
+      for (const r of (rx || [])) {
+        byItem[r.item_id] = byItem[r.item_id] || {};
+        byItem[r.item_id][r.emoji] = byItem[r.item_id][r.emoji] || { count: 0, mine: false };
+        byItem[r.item_id][r.emoji].count++;
+        if (r.user_id === user.id) byItem[r.item_id][r.emoji].mine = true;
+      }
+      for (const f of list) f.reactions = byItem[f.id] || {};
+    } catch (_e) {}
+  }
+  return list;
+}
+
+// React / un-react to a feed item (a friend's currently-reading or just-finished).
+export async function toggleReaction(itemId, emoji, currentlyOn) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  if (currentlyOn) await supabase.from('reactions').delete().match({ item_id: itemId, user_id: user.id, emoji });
+  else await supabase.from('reactions').insert({ item_id: itemId, user_id: user.id, emoji });
 }
 
 // Recommend a book to one or more friends, with an optional note.

@@ -385,4 +385,33 @@ join public.profiles p on p.id <> o.id
 where lower(o.email) = lower('tomlinson.chelsea@gmail.com')
 on conflict do nothing;
 
+-- ── 17) Reactions (feed hearts/claps on a friend's currently-reading / finished) ──
+create table if not exists public.reactions (
+  id         uuid primary key default gen_random_uuid(),
+  item_id    uuid not null references public.shelf_items(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  emoji      text not null,
+  created_at timestamptz default now(),
+  unique (item_id, user_id, emoji)
+);
+alter table public.reactions enable row level security;
+-- See reactions on any item you're allowed to see (yours, or a connected friend's shared item).
+drop policy if exists reactions_select on public.reactions;
+create policy reactions_select on public.reactions for select using (
+  exists (select 1 from public.shelf_items s
+          where s.id = reactions.item_id
+            and (s.user_id = auth.uid() or public.are_connected(auth.uid(), s.user_id)))
+);
+-- React (as yourself) to a connected friend's item.
+drop policy if exists reactions_insert on public.reactions;
+create policy reactions_insert on public.reactions for insert with check (
+  user_id = auth.uid()
+  and exists (select 1 from public.shelf_items s
+              where s.id = item_id
+                and (s.user_id = auth.uid() or public.are_connected(auth.uid(), s.user_id)))
+);
+-- Remove your own reaction.
+drop policy if exists reactions_delete on public.reactions;
+create policy reactions_delete on public.reactions for delete using (user_id = auth.uid());
+
 -- Done. Tables, security, and badges are ready.

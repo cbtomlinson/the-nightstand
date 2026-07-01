@@ -7,7 +7,7 @@ import { me } from './data.js';
 import { getBrand } from './brand.js';
 import { isConfigured } from './config.js';
 import { getSession, onAuth, getMyProfile, signOut, completeAuthRedirect } from './auth.js';
-import { init as initStore } from './store.js';
+import { init as initStore, getPendingRecCount } from './store.js';
 import * as S from './screens.js';
 import { go } from './screens.js';
 
@@ -59,9 +59,11 @@ function Shell({ profile } = {}) {
   const { screen, nav, bare } = route(hash);
   const navCls = (k) => 'nav-item' + (nav === k ? ' active' : '');
   const [showTour, setShowTour] = useState(() => { try { return !localStorage.getItem('rg_tour_seen'); } catch (e) { return false; } });
+  const [recCount, setRecCount] = useState(0); // unread friend recs → bubble on the advisor FAB
   const closeTour = () => { try { localStorage.setItem('rg_tour_seen', '1'); } catch (e) {} setShowTour(false); };
   useEffect(() => { document.title = brand.name; }, [brand.name]);
   useEffect(() => { initStore(); }, []);
+  useEffect(() => { getPendingRecCount().then(setRecCount).catch(() => {}); }, [hash]);
   // Pull-to-refresh for installed (standalone) PWAs — iOS has no browser
   // pull-to-refresh there. Drag down from the top of the scroll area to reload.
   useEffect(() => {
@@ -106,7 +108,7 @@ function Shell({ profile } = {}) {
     ${!bare && html`<nav class="bottom-nav">
       <button class=${navCls('shelf')} onClick=${() => go('/shelf')}><${Icon} name="books" /><span>Shelf</span></button>
       <button class=${navCls('feed')} onClick=${() => go('/feed')}><${Icon} name="feed" /><span>Room</span></button>
-      <button class="nav-fab" onClick=${() => go('/genie')} aria-label="Ask the advisor"><${Icon} name="sparkles" /></button>
+      <button class="nav-fab" style="position:relative" onClick=${() => go('/genie')} aria-label="Ask the advisor"><${Icon} name="sparkles" />${recCount > 0 ? html`<span style="position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;padding:0 5px;background:#ff3b30;color:#fff;font-size:11px;font-weight:700;line-height:1;border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--bg)">${recCount}</span>` : ''}</button>
       <button class=${navCls('friends')} onClick=${() => go('/friends')}><${Icon} name="users" /><span>Circle</span></button>
       <button class=${navCls('profile')} onClick=${() => go('/profile')}><${Icon} name="user" /><span>You</span></button>
     </nav>`}
