@@ -400,6 +400,7 @@ export function Genie() {
   const respondRec = async (rec, status) => {
     setCircleRecs((rs) => rs.filter((r) => r.id !== rec.id));
     try { await respondToRec(rec.id, status, status === 'accepted' ? rec.book : null); if (status === 'accepted') toast('Added to your shelf'); } catch (_e) {}
+    try { window.dispatchEvent(new Event('rg-recs-changed')); } catch (_e) {} // update the FAB badge now
   };
 
   const consult = async () => {

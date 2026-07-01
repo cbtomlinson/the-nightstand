@@ -486,7 +486,7 @@ export async function getFeed() {
   if (!ids.length) return [];
   const [{ data: profs }, { data: items }] = await Promise.all([
     supabase.from('profiles').select('id, display_name, email').in('id', ids),
-    supabase.from('shelf_items').select('user_id, status, rating, updated_at, books(id, title, author, cover_url, cover_color)')
+    supabase.from('shelf_items').select('id, user_id, status, rating, updated_at, books(id, title, author, cover_url, cover_color)')
       .in('user_id', ids).in('status', ['reading', 'finished']).order('updated_at', { ascending: false }).limit(40),
   ]);
   const nameById = {};
