@@ -3,6 +3,16 @@
 Things we've intentionally deferred (not bugs — decisions or future phases).
 
 ## Parked for a decision
+- **Member-to-member friending — how do people add EACH OTHER?** _(Raised 2026-06-28.)_ Today
+  connections are only created when the owner invites someone (connects them to the owner), so
+  e.g. Kevin can't friend Chelsea's sister — both are connected to Chelsea but not to each other,
+  and there's no member-to-member path. The tension: the ego-centric privacy model means you only
+  see people you're connected to, so you can't just "browse + add"; and friend-of-friend would
+  expose *everyone* connected to Chelsea to each other (mixing Kevin with the girlfriends), which
+  she explicitly does NOT want. Options discussed: (1) **Reading Rooms** — you connect by being in
+  a shared room (the intended mechanism; Slice 4); (2) **owner brokers** — an Admin control to link
+  any two members (quick, keeps Chelsea in control); (3) **friend link/code** — self-serve + private,
+  shared out-of-band. _(Chelsea wants to think it over — revisit.)_
 - **Blind date with a book — make it dynamic.** Right now it always reveals the same
   placeholder (Piranesi) and "Not for me" / "Not right now" don't change what shows.
   Options when we pick it up: pull a real hidden pick from the advisor each time
