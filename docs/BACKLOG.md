@@ -87,6 +87,16 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   we keep hitting during testing. _(Chelsea asked to park this — 2026-06-27.)_
 
 ## Enhancements (discussed, not built — 2026-06-28)
+- **"Where to find it" deep links** _(proposed 2026-06-29, awaiting Chelsea's go)._ Keep the manual
+  chips as the source of truth, but add one-tap **search links** per service: Kindle store
+  (amazon.com search), Audible (audible.com search), Spotify (open.spotify.com audiobook search) —
+  tap to check availability yourself, then tag it. **Libby stays manual** (no universal search URL;
+  it's library-specific — Chelsea expected this). Open design question: make the existing chips
+  themselves the links, or a separate "check availability" row.
+- **Hardcover API** _(parked 2026-06-29)._ Free GraphQL API with crowdsourced tags/moods/lists.
+  Could enrich recommendations + metadata later, but it's a new integration + key to manage, and
+  Mabel's rec quality is currently limited by taste data, not book metadata. Revisit when
+  recommendations need sharper mood/tag grounding.
 - **Background description pre-fetch.** Descriptions are now *cached* after first load (instant on
   reopen), but the *first* open of a book is still a beat slow. Fix: quietly pre-fetch + cache
   descriptions for your shelf books in the background (same trick as covers) so a book is ready
@@ -94,9 +104,12 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 - **Save "revisit a finished book" conversations.** Post-read reflection chats currently vanish
   when you leave. The `reflections` table already exists — persist the transcript so you can
   reopen a book and see "here's what you said last time" (also feeds Mabel's understanding).
-- **More import sources for a data-rich profile seed.** No Kindle scraping (no public API + ToS).
-  But the **Goodreads CSV importer already exists** in onboarding; add a **StoryGraph CSV** parser
-  and optionally parse Amazon's official **"Request My Data"** Kindle export.
+- **More import sources for a data-rich profile seed.** No Kindle scraping (no public API; ToS;
+  brittle) — asked twice, answer stands. The legit path: Amazon's official **"Request My Data"**
+  export (user requests at amazon.com/gp/privacycentral, arrives as a ZIP in ~1–2 days) includes
+  **Kindle reading history + reading-session data** (the percentages-read signal Chelsea wants) —
+  build a parser for it when someone has an export in hand. Also: **StoryGraph CSV** parser.
+  The **Goodreads CSV importer already exists** in onboarding and remains the practical seed.
 
 ## Product direction (someday) — Chelsea's roadmap
 Staying **invite-only for Chelsea + friends** for now. Possible futures (noted 2026-06-27):

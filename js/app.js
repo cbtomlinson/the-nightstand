@@ -40,6 +40,7 @@ function route(hash) {
     case 'feed':       return { screen: html`<${S.Feed} />`, nav: 'feed' };
     case 'friends':    return { screen: html`<${S.Friends} />`, nav: 'friends' };
     case 'friend':     return { screen: html`<${S.FriendDetail} id=${seg[1]} />`, nav: 'friends' };
+    case 'midread':    return { screen: html`<${S.MidRead} id=${seg[1]} />`, nav: 'shelf' };
     case 'profile':    return { screen: html`<${S.Profile} />`, nav: 'profile' };
     case 'search':     return { screen: html`<${S.Search} />`, nav: 'shelf' };
     case 'import':     return { screen: html`<${S.Import} />`, nav: 'profile' };

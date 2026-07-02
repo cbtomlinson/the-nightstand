@@ -39,6 +39,27 @@ function WishCard() {
   </div>`;
 }
 
+// Tap-to-reveal "what's it about?" — Google synopsis first, Mabel as fallback.
+// A tap (not auto-fetch) keeps rec cards tidy and avoids N lookups per consult.
+function AboutBlurb({ title, author }) {
+  const [state, setState] = useState('idle'); // idle | loading | done | none
+  const [text, setText] = useState('');
+  const load = async () => {
+    if (state === 'loading' || state === 'done') return;
+    setState('loading');
+    try {
+      const e = await advisorEnrich({ title, author: author || '' });
+      let d = e && e.description ? stripHtml(e.description) : '';
+      if (!d) d = (await advisorDescribe({ title, author: author || '' })) || '';
+      if (d) { setText(d.length > 420 ? d.slice(0, 420) + '…' : d); setState('done'); }
+      else setState('none');
+    } catch (_e) { setState('none'); }
+  };
+  if (state === 'done') return html`<p class="muted" style="margin:10px 0 0;line-height:1.5;font-size:13px">${text}</p>`;
+  if (state === 'none') return html`<p class="dim" style="margin:10px 0 0;font-size:12px">No description found — tap Info to look it up on the web.</p>`;
+  return html`<button class="tag mt-8" onClick=${load} disabled=${state === 'loading'}>${state === 'loading' ? 'Fetching…' : '📖 What’s it about?'}</button>`;
+}
+
 // Shown on advisor screens when the member is archived (AI paused, app still works).
 function AdvisorPaused() {
   return html`<div class="card center-col" style="gap:10px;padding:26px 18px">
@@ -319,6 +340,7 @@ export function BookDetail({ id }) {
         <button class="btn btn-primary grow" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'finished', { finished_at: new Date().toISOString().slice(0, 10) }), () => go('/interview/' + id))}><${Icon} name="sparkles" /> I finished this</button>
         <button class="btn" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'dnf'), () => toast('Moved to Didn’t finish'))}><${Icon} name="dnf" /> DNF</button>
       </div>
+      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/midread/' + id)}><${Icon} name="sparkles" /> Talk it through with Mabel</button>
     </div>`}
 
     ${status === 'finished' && html`<div class="card mt-16">
@@ -503,6 +525,7 @@ export function Genie() {
           ${rec.rating && html`<div class="rec-line"><${Icon} name="star" /><span><b>★ ${rec.rating}</b>${rec.ratingsCount ? ' · ' + Number(rec.ratingsCount).toLocaleString() + ' ratings' : ''}</span></div>`}
           ${(rec.good || []).map((g) => html`<div class="rec-line good"><${Icon} name="check" /><span>${g}</span></div>`)}
           ${(rec.warn || []).map((w) => html`<div class="rec-line warn"><${Icon} name="alert" /><span>${w}</span></div>`)}
+          <${AboutBlurb} title=${b.title} author=${b.author} />
           <div class="row mt-12" style="gap:8px">
             <button class="btn btn-primary grow" onClick=${() => addToShelf(b, 'to_read').then(() => toast('Added to your shelf')).catch(() => toast('Could not add — try again'))}><${Icon} name="plus" /> Add to shelf</button>
             <button class="btn" onClick=${() => setDismissed((d) => [...d, b.title])}>Not now</button>
@@ -515,6 +538,10 @@ export function Genie() {
           <button class="btn btn-ghost btn-block mt-8" style="color:var(--text-3)" onClick=${() => { neverRecommend(b.title, b.author).catch(() => {}); setDismissed((d) => [...d, b.title]); toast('Got it — I won’t suggest that again'); }}><${Icon} name="dnf" /> Never recommend this</button>
         </div>`;
       })}
+      ${shown.length >= 2 ? html`<button class="btn btn-block" onClick=${() => {
+        try { sessionStorage.setItem('rg_choose_seed', JSON.stringify(shown.map((r) => ({ title: r.book.title, author: r.book.author, coverUrl: r.book.coverUrl || null })))); } catch (_e) {}
+        go('/choose');
+      }}><${Icon} name="books" /> Can’t decide? Talk these through with Mabel</button>` : ''}
       ${shown.length === 0 ? html`<div class="card">
         <p class="muted" style="margin:0;font-size:13.5px">${recs.length ? 'Everything that came back is already on your shelves.' : 'Mabel didn’t surface fresh picks this round.'} Try a different mood, or tap <b>Help me choose</b> above.</p>
         ${diag && (diag.raw || diag.reason) && html`<details style="margin-top:10px">
@@ -575,6 +602,34 @@ export function BlindDate() {
   </div>`;
 }
 
+/* ---------------- Mid-read companion (talk it through as you read) ---------------- */
+export function MidRead({ id }) {
+  const st = useStore();
+  const live = advisorReady();
+  const brand = getBrand();
+  if (st.me.status === 'archived') return html`<div class="screen"><div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div><${AdvisorPaused} /></div>`;
+  const b = (st.booksById && st.booksById[id]) || D.getBook(id);
+  if (!b) return html`<div class="screen"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button><div class="empty">Book not found.</div></div>`;
+  const item = (st.shelves.reading || []).find((i) => i.bookId === id);
+  const pct = (item && item.progress) || 0;
+  const trigger = `I'm ${pct}% into "${b.title}"${b.author ? ' by ' + b.author : ''} and I'd like to talk about it as I read. Don't reveal ANYTHING beyond that point.`;
+  return html`<div class="screen">
+    <div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>
+    <div class="row mt-8" style="gap:10px;margin-bottom:10px">
+      <div class="familiar-sm">${brand.fam.art()}</div>
+      <div><div class="book-title">${b.title}</div><div class="book-note">Mid-read chat · you’re at ${pct}%</div></div>
+    </div>
+    <${ChatThread}
+      seed=${live ? [] : [{ me: false, text: `You’re <b>${pct}%</b> into <b>${escapeHtml(b.title)}</b> — how’s it treating you?` }]}
+      kickoff=${live}
+      followups=${['How is it landing so far?', 'Honest take: if it still feels like homework by the halfway mark, it may not be your book.', 'Want my honest read on whether to push through?']}
+      chips=${['I’m loving it', 'I’m not sure about it', 'Should I hang in there?', 'Where’s this going? (no spoilers)']}
+      placeholder="Tell Mabel…"
+      sendFn=${live ? ((api) => advisorChat({ kind: 'midread', book: b.title, messages: api })) : null}
+      trigger=${live ? trigger : null} />
+  </div>`;
+}
+
 /* ---------------- Help me choose (from books you already have) ---------------- */
 export function Choose() {
   const st = useStore();
@@ -587,6 +642,20 @@ export function Choose() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState(null);
   const [searching, setSearching] = useState(false);
+
+  // Arriving from "Can't decide?" under the advisor's picks: preload those books
+  // as picked candidates (they're usually not on the TBR yet).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('rg_choose_seed');
+      if (!raw) return;
+      sessionStorage.removeItem('rg_choose_seed');
+      const seeds = JSON.parse(raw).filter((s) => s && s.title);
+      if (!seeds.length) return;
+      setExtra((e) => [...e, ...seeds.filter((s) => !e.some((x) => (x.title || '').toLowerCase() === s.title.toLowerCase()))]);
+      setPicked((p) => [...new Set([...p, ...seeds.map((s) => s.title)])]);
+    } catch (_e) {}
+  }, []);
 
   if (st.me.status === 'archived') return html`<div class="screen"><div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div><${AdvisorPaused} /></div>`;
 
@@ -1400,6 +1469,11 @@ function SearchResult({ b }) {
         ${[['to_read', 'TBR'], ['reading', 'Reading'], ['finished', 'Finished'], ['dnf', 'DNF']].map(([s, label]) =>
           html`<button class="tag" disabled=${busy} style=${addedStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${addedStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
       </div>
+      <div class="tagrow mt-8">
+        <button class="tag" onClick=${() => shareBook({ title: b.title, author: b.author, coverUrl: cover })}><${Icon} name="send" /> Share</button>
+        <a class="tag" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>
+      </div>
+      <${RecommendButton} book=${{ title: b.title, author: b.author, coverUrl: cover }} />
     </div>`}
   </div>`;
 }
