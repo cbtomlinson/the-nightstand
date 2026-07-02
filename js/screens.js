@@ -612,7 +612,7 @@ export function MidRead({ id }) {
   if (!b) return html`<div class="screen"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button><div class="empty">Book not found.</div></div>`;
   const item = (st.shelves.reading || []).find((i) => i.bookId === id);
   const pct = (item && item.progress) || 0;
-  const trigger = `I'm ${pct}% into "${b.title}"${b.author ? ' by ' + b.author : ''} and I'd like to talk about it as I read. Don't reveal ANYTHING beyond that point.`;
+  const trigger = `I'm about ${pct}% into "${b.title}"${b.author ? ' by ' + b.author : ''} and I'd like to talk about it as I read. My saved progress may be a little stale — confirm where I actually am before discussing anything specific, and never reveal anything beyond my spot.`;
   return html`<div class="screen">
     <div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>
     <div class="row mt-8" style="gap:10px;margin-bottom:10px">
