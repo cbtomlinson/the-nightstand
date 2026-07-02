@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -615,26 +615,45 @@ export function MidRead({ id }) {
   const st = useStore();
   const live = advisorReady();
   const brand = getBrand();
-  if (st.me.status === 'archived') return html`<div class="screen"><div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div><${AdvisorPaused} /></div>`;
   const b = (st.booksById && st.booksById[id]) || D.getBook(id);
-  if (!b) return html`<div class="screen"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button><div class="empty">Book not found.</div></div>`;
-  const item = (st.shelves.reading || []).find((i) => i.bookId === id);
+  const item = st.ready ? (st.shelves.reading || []).find((i) => i.bookId === id) : null;
+  // Resume the saved thread for this book, if any (kept forever — Mabel remembers).
+  const [savedThread, setSavedThread] = useState(undefined); // undefined = loading
+  useEffect(() => {
+    let alive = true;
+    if (!st.ready) return () => { alive = false; };
+    if (!live || !item) { setSavedThread(null); return () => { alive = false; }; }
+    getReflection(item.id, 'midread')
+      .then((r) => { if (alive) setSavedThread(r || null); })
+      .catch(() => { if (alive) setSavedThread(null); });
+    return () => { alive = false; };
+  }, [id, st.ready]);
+
+  const back = html`<div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>`;
+  if (st.me.status === 'archived') return html`<div class="screen">${back}<${AdvisorPaused} /></div>`;
+  if (st.ready && !b) return html`<div class="screen">${back}<div class="empty">Book not found.</div></div>`;
+  if (!st.ready || savedThread === undefined) return html`<div class="screen">${back}<div class="card center-col" style="padding:26px"><div class="dim">Opening your chat…</div></div></div>`;
+
   const pct = (item && item.progress) || 0;
+  const resume = savedThread && Array.isArray(savedThread.transcript) && savedThread.transcript.length
+    ? savedThread.transcript.map((m) => ({ me: m.role === 'user', text: escapeHtml(String(m.content || '')) }))
+    : null;
   const trigger = `I'm about ${pct}% into "${b.title}"${b.author ? ' by ' + b.author : ''} and I'd like to talk about it as I read. My saved progress may be a little stale — confirm where I actually am before discussing anything specific, and never reveal anything beyond my spot.`;
   return html`<div class="screen">
-    <div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>
+    ${back}
     <div class="row mt-8" style="gap:10px;margin-bottom:10px">
       <div class="familiar-sm">${brand.fam.art()}</div>
-      <div><div class="book-title">${b.title}</div><div class="book-note">Mid-read chat · you’re at ${pct}%</div></div>
+      <div><div class="book-title">${b.title}</div><div class="book-note">Mid-read chat · you’re at ${pct}%${resume ? ' · picking up where you left off' : ''}</div></div>
     </div>
     <${ChatThread}
-      seed=${live ? [] : [{ me: false, text: `You’re <b>${pct}%</b> into <b>${escapeHtml(b.title)}</b> — how’s it treating you?` }]}
-      kickoff=${live}
+      seed=${live ? (resume || []) : [{ me: false, text: `You’re <b>${pct}%</b> into <b>${escapeHtml(b.title)}</b> — how’s it treating you?` }]}
+      kickoff=${live && !resume}
       followups=${['How is it landing so far?', 'Honest take: if it still feels like homework by the halfway mark, it may not be your book.', 'Want my honest read on whether to push through?']}
       chips=${['I’m loving it', 'I’m not sure about it', 'Should I hang in there?', 'Where’s this going? (no spoilers)']}
       placeholder="Tell Mabel…"
       sendFn=${live ? ((api) => advisorChat({ kind: 'midread', book: b.title, messages: api })) : null}
-      trigger=${live ? trigger : null} />
+      trigger=${live ? trigger : null}
+      onExchange=${(live && item) ? ((api) => { saveReflection(item.id, 'midread', api).catch(() => {}); }) : null} />
   </div>`;
 }
 
@@ -1025,13 +1044,15 @@ export function Profile() {
 }
 
 /* ---------------- Reusable chat thread ---------------- */
-function ChatThread({ seed, chips, followups, placeholder, sendFn, trigger, kickoff }) {
+function ChatThread({ seed, chips, followups, placeholder, sendFn, trigger, kickoff, onExchange }) {
   const [msgs, setMsgs] = useState(seed);
   const [val, setVal] = useState('');
   const [typing, setTyping] = useState(Boolean(kickoff && sendFn && trigger)); // thinking from frame 0 on kickoff
   const [dynChips, setDynChips] = useState([]); // contextual quick-replies from the last advisor turn
   const idx = useRef(0);
   const kicked = useRef(false);
+  // API-shaped transcript (what onExchange persists; trigger stays out — it's re-sent each turn).
+  const toApi = (list) => list.map((m) => ({ role: m.me ? 'user' : 'assistant', content: stripHtml(m.text) }));
 
   useEffect(() => {
     const el = document.querySelector('.app-main');
@@ -1050,6 +1071,7 @@ function ChatThread({ seed, chips, followups, placeholder, sendFn, trigger, kick
         setTyping(false);
         setMsgs((m) => [...m, { me: false, text: escapeHtml(text) }]);
         setDynChips((res && res.suggestions) || []);
+        if (onExchange) try { onExchange(toApi([...msgs, { me: false, text: escapeHtml(text) }])); } catch (_e) {}
       } catch (e) {
         setTyping(false);
         if (followups && followups.length) setMsgs((m) => [...m, { me: false, text: followups[0] }]);
@@ -1084,6 +1106,7 @@ function ChatThread({ seed, chips, followups, placeholder, sendFn, trigger, kick
         setMsgs((m) => [...m, { me: false, text: escapeHtml(text) }]);
         setDynChips((res && res.suggestions) || []);
         reloadShelves(); // surface any book the advisor just added to a shelf
+        if (onExchange) try { onExchange(toApi([...convo, { me: false, text: escapeHtml(text) }])); } catch (_e) {}
       } catch (e) {
         console.warn('[advisor] falling back to scripted:', e && e.message);
         scripted();
@@ -1122,28 +1145,57 @@ export function Interview({ id }) {
   const st = useStore();
   const live = advisorReady();
   const b = (st.booksById && st.booksById[id]) || D.getBook(id) || { title: 'this book', author: '' };
-  if (st.me.status === 'archived') return html`<div class="screen"><div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div><${AdvisorPaused} /></div>`;
+  let item = null;
+  if (st.ready) for (const s of ['finished', 'dnf', 'reading', 'to_read']) { const f = (st.shelves[s] || []).find((i) => i.bookId === id); if (f) { item = f; break; } }
+  // Resume a saved reflection + surface what they said DURING the read (mid-read chat).
+  const [savedThread, setSavedThread] = useState(undefined); // undefined = loading
+  const [midCtx, setMidCtx] = useState('');
+  useEffect(() => {
+    let alive = true;
+    if (!st.ready) return () => { alive = false; };
+    if (!live || !item) { setSavedThread(null); return () => { alive = false; }; }
+    (async () => {
+      try { const r = await getReflection(item.id, 'post_read'); if (alive) setSavedThread(r || null); }
+      catch (_e) { if (alive) setSavedThread(null); }
+      try {
+        const mr = await getReflection(item.id, 'midread');
+        const mine = ((mr && mr.transcript) || []).filter((m) => m && m.role === 'user').map((m) => String(m.content || '').trim()).filter(Boolean);
+        if (alive && mine.length) setMidCtx(mine.join(' · ').slice(0, 400));
+      } catch (_e) {}
+    })();
+    return () => { alive = false; };
+  }, [id, st.ready]);
+
+  const back = html`<div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>`;
+  if (st.me.status === 'archived') return html`<div class="screen">${back}<${AdvisorPaused} /></div>`;
+  if (!st.ready || savedThread === undefined) return html`<div class="screen">${back}<div class="card center-col" style="padding:26px"><div class="dim">Opening your reflection…</div></div></div>`;
+
   const seed = [
     { me: false, text: `You finished <b>${b.title}</b> — lovely. Want to tell me what stuck with you? Even a sentence sharpens my next picks — or just say “all set.”` },
   ];
+  const resume = savedThread && Array.isArray(savedThread.transcript) && savedThread.transcript.length
+    ? savedThread.transcript.map((m) => ({ me: m.role === 'user', text: escapeHtml(String(m.content || '')) }))
+    : null;
   const followups = [
     'Noted — that’s useful. Anything about the <b>characters</b> or the <b>ending</b> that stuck with you?',
     'Lovely. I’ve folded that into your profile — thank you. Onward to the next great read.',
   ];
+  const trigger = 'I just finished ' + b.title + '.' + (midCtx ? ` While I was reading it, I told you: ${midCtx}` : '');
   return html`<div class="screen">
-    <div class="chat-topbar"><button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button></div>
+    ${back}
     <div class="row mt-8" style="gap:12px;margin-bottom:14px">
       <${BookCover} book=${b} size="sm" />
       <div>
         <div class="book-title">Reflection</div>
-        <div class="book-note">${b.title} · with the advisor</div>
+        <div class="book-note">${b.title} · with the advisor${resume ? ' · continuing' : ''}</div>
       </div>
     </div>
-    <${ChatThread} seed=${seed} followups=${followups}
+    <${ChatThread} seed=${live && resume ? resume : seed} followups=${followups}
       chips=${['It flew by', 'Slow but worth it', 'I pushed through', 'The prose was the draw']}
       placeholder="Tell the advisor…"
       sendFn=${live ? ((api) => advisorChat({ kind: 'post_read', book: b.title, messages: api })) : null}
-      trigger=${live ? ('I just finished ' + b.title + '.') : null} />
+      trigger=${live ? trigger : null}
+      onExchange=${(live && item) ? ((api) => { saveReflection(item.id, 'post_read', api).catch(() => {}); }) : null} />
   </div>`;
 }
 

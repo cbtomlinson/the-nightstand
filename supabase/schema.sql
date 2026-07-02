@@ -80,11 +80,15 @@ create table if not exists public.reflections (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
   shelf_item_id uuid references public.shelf_items(id) on delete set null,
-  kind          text check (kind in ('intake','post_read','dnf')),
+  kind          text check (kind in ('intake','post_read','dnf','midread')),
   transcript    jsonb default '[]'::jsonb,
   insights      jsonb default '{}'::jsonb,
   created_at    timestamptz default now()
 );
+-- (existing installs) allow the mid-read companion chats:
+alter table public.reflections drop constraint if exists reflections_kind_check;
+alter table public.reflections add constraint reflections_kind_check
+  check (kind in ('intake','post_read','dnf','midread'));
 
 -- ── 6) Recommendations (each rec is a hypothesis) ──────────────────────────
 create table if not exists public.recommendations (

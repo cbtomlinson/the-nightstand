@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { supabase } from './supabase.js';
 import * as D from './data.js';
-import { advisorEnrich, advisorReady } from './advisor.js';
+import { advisorEnrich, advisorDescribe, advisorReady } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 
 // Only this account gets kickstarted from js/data.js. Everyone else starts fresh
@@ -199,7 +199,53 @@ async function refresh(userId, profile) {
   };
 
   set({ ready: true, error: null, me, profile: prof, booksById, shelves, stats });
-  backfillCovers(booksById); // fire-and-forget: fill any missing covers
+  backfillCovers(booksById);       // fire-and-forget: fill any missing covers
+  backfillDescriptions(booksById); // fire-and-forget: cache descriptions so books open instantly
+}
+
+// Background description pre-fetch: quietly cache a description for every shelved
+// book that lacks one (same pattern as covers), so opening a book feels instant.
+// Descriptions persist on the shared books row, so this is a one-time backfill per
+// book — later sessions find them already cached. Claude-written fallbacks (for the
+// few titles Google can't describe) are capped per pass; stragglers fill lazily on open.
+let backfillingDesc = false;
+async function backfillDescriptions(booksById) {
+  if (backfillingDesc || !advisorReady()) return;
+  const missing = Object.values(booksById).filter((b) => b && b.title && !b.description);
+  if (!missing.length) return;
+  backfillingDesc = true;
+  let genBudget = 8;
+  try {
+    for (let i = 0; i < missing.length; i += 3) {
+      await Promise.all(missing.slice(i, i + 3).map(async (b) => {
+        try {
+          const e = await advisorEnrich({ title: b.title, author: b.author || '' });
+          let d = (e && e.description) || null;
+          if (!d && genBudget > 0) { genBudget--; d = await advisorDescribe({ title: b.title, author: b.author || '' }); }
+          if (d) await persistDescription(b.id, d);
+        } catch (_e) {}
+      }));
+    }
+  } finally { backfillingDesc = false; }
+}
+
+// Saved advisor conversations (mid-read companion + post-read reflections) — one
+// resumable thread per shelf item + kind, private to the user (RLS: owner-only).
+export async function getReflection(shelfItemId, kind) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !shelfItemId) return null;
+  const { data } = await supabase.from('reflections')
+    .select('id, transcript')
+    .eq('user_id', user.id).eq('shelf_item_id', shelfItemId).eq('kind', kind)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  return data || null;
+}
+export async function saveReflection(shelfItemId, kind, transcript) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !shelfItemId) return;
+  const existing = await getReflection(shelfItemId, kind);
+  if (existing) await supabase.from('reflections').update({ transcript }).eq('id', existing.id);
+  else await supabase.from('reflections').insert({ user_id: user.id, shelf_item_id: shelfItemId, kind, transcript });
 }
 
 // Re-pull the current user's shelves into the store — call after the advisor may
