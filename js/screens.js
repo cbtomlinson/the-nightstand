@@ -341,7 +341,7 @@ export function BookDetail({ id }) {
         <button class="btn btn-primary grow" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'finished', { finished_at: new Date().toISOString().slice(0, 10) }), () => go('/interview/' + id))}><${Icon} name="sparkles" /> I finished this</button>
         <button class="btn" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'dnf'), () => toast('Moved to Didn’t finish'))}><${Icon} name="dnf" /> DNF</button>
       </div>
-      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/midread/' + id)}><${Icon} name="sparkles" /> Talk it through with Mabel</button>
+      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/midread/' + id)}><${Icon} name="sparkles" /> Tell Mabel how it’s going</button>
     </div>`}
 
     ${status === 'finished' && html`<div class="card mt-16">

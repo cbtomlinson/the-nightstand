@@ -115,7 +115,9 @@ img { display: block; max-width: 100%; }
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 18px 16px calc(var(--nav-h) + 28px);
+  /* bottom padding must cover the nav INCLUDING the iPhone home-indicator inset,
+     or the bar overlaps the last bit of content */
+  padding: 18px 16px calc(var(--nav-h) + 28px + env(safe-area-inset-bottom));
 }
 
 .screen { animation: fadeUp 0.28s ease both; }

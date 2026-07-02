@@ -140,7 +140,7 @@ function scenario(kind: string, book?: string, mood?: string): string {
   if (kind === 'fit')
     return `\n\nRIGHT NOW: Give your honest read on whether "${book}" is a good fit for THEM specifically — using their stable taste + current mood. Lead with a clear verdict and a rough confidence, give 1–2 concrete reasons it should land and one honest caveat that might not, and reference their patterns or past books BY NAME (e.g. why it's like/unlike something they loved or bailed on). Tight and warm, no spoilers, then invite a follow-up question.${m}`;
   if (kind === 'midread')
-    return `\n\nRIGHT NOW: They're PARTWAY THROUGH "${book}" and want a companion as they read — impressions, doubts, "should I hang in there?". React to what they share; be honest about whether it's likely to pay off for THEM (use their taste — and blessing a DNF is a real kindness when warranted, they don't need permission to quit). SPOILER DISCIPLINE IS ABSOLUTE here: OPEN by confirming their spot — their saved progress may be stale ("The app says you're around 40% — still about right?") — and never reveal or hint at anything past their CONFIRMED point. If their position ever feels uncertain mid-chat, re-ask before discussing specifics. And the biggest reveals (twists, endings, major deaths, whodunits) stay off-limits NO MATTER what point they claim — protect the experience. Short, warm turns; one question at a time.${m}`;
+    return `\n\nRIGHT NOW: They're PARTWAY THROUGH "${book}" and want a companion as they read — impressions, doubts, "should I hang in there?". React to what they share; be honest about whether it's likely to pay off for THEM (use their taste — and blessing a DNF is a real kindness when warranted, they don't need permission to quit). SPOILER DISCIPLINE IS ABSOLUTE here: OPEN by confirming their spot — their saved progress may be stale ("The app says you're around 40% — still about right?") — and never reveal or hint at anything past their CONFIRMED point. If their position ever feels uncertain mid-chat, re-ask before discussing specifics. And the biggest reveals (twists, endings, major deaths, whodunits) stay off-limits NO MATTER what point they claim — protect the experience. Stay with THIS book — do NOT pivot to recommending other books (the one exception: they decide to DNF and ask what's next). Conversations here are allowed to simply wind down; a warm, brief close at a natural stopping point beats changing the subject. Short, warm turns; one question at a time.${m}`;
   return `\n\nRIGHT NOW: Chatting about books. Warm, opinionated reading friend.${m}`;
 }
 
@@ -272,21 +272,57 @@ Deno.serve(async (req) => {
         (neverList.length ? `\n\nNEVER recommend these: ${neverList.join('; ')}.` : '') +
         (snoozedList.length ? `\n\nAVOID for now (recently set aside — pick other books first): ${snoozedList.join('; ')}.` : '') +
         `\n\nRIGHT NOW: Recommend 2–3 specific real English-language books${currentMood ? ` (mood: ${currentMood})` : ''} that they have NOT finished, DNF'd, are reading, or already saved — nothing on the lists above. At least one confident match; optionally one gentle "experiment".` +
-        `\n\nRespond with ONLY a JSON array, no prose, no fences. Each item: {"title": string, "author": string, "confidence": number 0-100, "moodFit": string, "good": [string, string], "warn": [string], "experiment": boolean}. No spoilers.`;
+        `\n\nRespond with ONLY a JSON array, no prose, no fences. Each item: {"title": string, "author": string, "confidence": number 0-100, "moodFit": string, "good": [string, string], "warn": [string], "experiment": boolean}. No spoilers. Output the array exactly ONCE — no drafts, no "placeholder" items, no corrections, no text before or after it.`;
 
-      const extract = (txt: string): any[] => {
-        let t = (txt || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
-        const s = t.indexOf('['), e = t.lastIndexOf(']');
-        if (s >= 0 && e > s) t = t.slice(s, e + 1);
-        const v = JSON.parse(t);
-        return Array.isArray(v) ? v : (Array.isArray(v?.recommendations) ? v.recommendations : []);
+      // Model text can contain prose, fences, a throwaway DRAFT array before the
+      // real one, or a truncated tail (ran out of tokens) — seen in the wild.
+      // Scan for every balanced top-level array (string-aware), prefer the LAST
+      // one with real items, and fall back to repairing a truncated array.
+      const balancedArrays = (t: string): string[] => {
+        const out: string[] = [];
+        for (let i = 0; i < t.length; i++) {
+          if (t[i] !== '[') continue;
+          let depth = 0, inStr = false, esc = false;
+          for (let j = i; j < t.length; j++) {
+            const c = t[j];
+            if (esc) { esc = false; continue; }
+            if (c === '\\') { esc = true; continue; }
+            if (c === '"') { inStr = !inStr; continue; }
+            if (inStr) continue;
+            if (c === '[') depth++;
+            else if (c === ']') { depth--; if (depth === 0) { out.push(t.slice(i, j + 1)); i = j; break; } }
+          }
+        }
+        return out;
       };
-      let raw = textOf(await anthropic(apiKey, system, [{ role: 'user', content: 'Recommend my next read.' }], 2000));
+      const looksReal = (v: any) => Array.isArray(v) && v.length && v.every((x: any) => x && typeof x.title === 'string');
+      const dropPlaceholders = (v: any[]) => v.filter((x: any) => x && x.title
+        && String(x.title).trim().toLowerCase() !== 'placeholder'
+        && String(x.author || '').trim().toLowerCase() !== 'placeholder');
+      const extract = (txt: string): any[] => {
+        const t = (txt || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+        for (const cand of balancedArrays(t).reverse()) {
+          try { const v = JSON.parse(cand); if (looksReal(v)) { const c = dropPlaceholders(v); if (c.length) return c; } } catch (_e) {}
+        }
+        // Truncation repair: cut mid-array → take an opening '[', trim to the last
+        // complete object, close the array. Try the latest '[' first.
+        const opens: number[] = [];
+        for (let i = 0; i < t.length; i++) if (t[i] === '[') opens.push(i);
+        for (let k = opens.length - 1; k >= 0; k--) {
+          const tail = t.slice(opens[k]);
+          const lastObj = tail.lastIndexOf('}');
+          if (lastObj <= 0) continue;
+          try { const v = JSON.parse(tail.slice(0, lastObj + 1) + ']'); if (looksReal(v)) { const c = dropPlaceholders(v); if (c.length) return c; } } catch (_e) {}
+        }
+        const v = JSON.parse(t);
+        return Array.isArray(v) ? dropPlaceholders(v) : (Array.isArray(v?.recommendations) ? dropPlaceholders(v.recommendations) : []);
+      };
+      let raw = textOf(await anthropic(apiKey, system, [{ role: 'user', content: 'Recommend my next read.' }], 3000));
       let parsed: any[] = [];
       try { parsed = extract(raw); }
       catch (_e) {
         try { // one retry, nudging for clean JSON only
-          raw = textOf(await anthropic(apiKey, system + '\n\nReturn ONLY the JSON array — no prose, no code fences.', [{ role: 'user', content: 'Recommend my next read. JSON array only.' }], 2000));
+          raw = textOf(await anthropic(apiKey, system + '\n\nReturn ONLY the JSON array — no prose, no code fences.', [{ role: 'user', content: 'Recommend my next read. JSON array only.' }], 3000));
           parsed = extract(raw);
         } catch (_e2) { return json({ items: [], raw, reason: 'parse_failed' }); }
       }
