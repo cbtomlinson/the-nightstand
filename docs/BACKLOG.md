@@ -96,13 +96,13 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   Could enrich recommendations + metadata later, but it's a new integration + key to manage, and
   Mabel's rec quality is currently limited by taste data, not book metadata. Revisit when
   recommendations need sharper mood/tag grounding.
-- **Background description pre-fetch.** Descriptions are now *cached* after first load (instant on
-  reopen), but the *first* open of a book is still a beat slow. Fix: quietly pre-fetch + cache
-  descriptions for your shelf books in the background (same trick as covers) so a book is ready
-  the moment you open it. Plus a subtle shimmer for the rare uncached one.
-- **Save "revisit a finished book" conversations.** Post-read reflection chats currently vanish
-  when you leave. The `reflections` table already exists — persist the transcript so you can
-  reopen a book and see "here's what you said last time" (also feeds Mabel's understanding).
+- ✅ **Background description pre-fetch** _(shipped 2026-06-29)._ `backfillDescriptions` in
+  store.js quietly caches a description for every shelved book missing one (batched, Google
+  first, Claude fallback capped at 8/pass; persists to the shared books row = one-time backfill).
+- ✅ **Saved, resumable advisor chats** _(shipped 2026-06-29)._ Mid-read + post-read threads
+  persist to `reflections` (one thread per shelf item + kind, kept forever) and resume on
+  reopen; the post-read trigger includes what you said mid-read. Needed: the
+  `reflections_kind_check` migration (adds 'midread').
 - **More import sources for a data-rich profile seed.** No Kindle scraping (no public API; ToS;
   brittle) — asked twice, answer stands. The legit path: Amazon's official **"Request My Data"**
   export (user requests at amazon.com/gp/privacycentral, arrives as a ZIP in ~1–2 days) includes
