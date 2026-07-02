@@ -58,8 +58,9 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   + their current read; **tappable friend cards** -> current reads as rich cards (cover, AI
   description, +TBR, share, look-it-up, recommend); **PWA reload** (top-bar refresh button +
   pull-to-refresh gesture for installed/standalone apps).
-- ⏭️ **Slice 2 — the cozy feed:** ambient glimpses of your circle, namely **"just finished"
-  moments** + **reactions**. Passive, no page-visiting.
+- ✅ **Slice 2 — the cozy feed (shipped 2026-06-28/29):** Reading Room feed shows the circle's
+  currently-reading + recent "just finished" (with stars), newest first; **reactions** (❤️/😍/👏,
+  optimistic, per-item); rec-notification = rose bubble on the advisor FAB that clears on respond.
 - ⏭️ **Slice 3 — buddy reads:** flexible (1+ people, jump in anytime), progress + discussion
   (open / honor-system spoilers for v1). Wire the existing `BuddyRead` template; turn the
   `#/buddy` route back on.
