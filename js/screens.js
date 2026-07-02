@@ -65,7 +65,7 @@ function AboutBlurb({ title, author }) {
 function AdvisorPaused() {
   return html`<div class="card center-col" style="gap:10px;padding:26px 18px">
     <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px;background:var(--bg-2);color:var(--text-3);box-shadow:none"><${Icon} name="moon" /></div>
-    <div class="book-title">Mabel is paused on your account</div>
+    <div class="book-title">Your advisor is paused on your account</div>
     <p class="muted" style="margin:0;line-height:1.55;font-size:13.5px">You can still use all your shelves — add books, rate them, track progress, and mark where to find them. Ask Chelsea to switch the advisor back on.</p>
     <button class="btn btn-block mt-8" onClick=${() => go('/shelf')}><${Icon} name="books" /> Go to your shelves</button>
   </div>`;
@@ -341,7 +341,7 @@ export function BookDetail({ id }) {
         <button class="btn btn-primary grow" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'finished', { finished_at: new Date().toISOString().slice(0, 10) }), () => go('/interview/' + id))}><${Icon} name="sparkles" /> I finished this</button>
         <button class="btn" disabled=${busy} onClick=${() => run(() => setStatus(item.id, 'dnf'), () => toast('Moved to Didn’t finish'))}><${Icon} name="dnf" /> DNF</button>
       </div>
-      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/midread/' + id)}><${Icon} name="sparkles" /> Tell Mabel how it’s going</button>
+      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/midread/' + id)}><${Icon} name="sparkles" /> Tell your advisor how it’s going</button>
     </div>`}
 
     ${status === 'finished' && html`<div class="card mt-16">
@@ -502,7 +502,7 @@ export function Genie() {
         ${['Cozy', 'Twisty', 'A page-turner', 'Make me cry', 'Hopeful', 'Funny', 'Dark & gritty', 'Slow burn', 'Atmospheric', 'Something short', 'Mind-bending', 'Romance', 'Escape', 'Surprise me'].map((c) => html`<button class=${'chip-btn' + (moodHas(c) ? ' active' : '')} onClick=${() => toggleMood(c)}>${c}</button>`)}
       </div>
       <button class=${'btn btn-primary btn-block mt-12' + (loading ? ' pulsing' : '')} disabled=${loading} onClick=${consult}><${Icon} name="sparkles" /> ${loading ? 'Consulting the stars…' : 'Consult your advisor'}</button>
-      ${loading && html`<div class="dim" style="font-size:12.5px;text-align:center;margin-top:10px">Mabel is reading your shelves — this can take a moment.</div>`}
+      ${loading && html`<div class="dim" style="font-size:12.5px;text-align:center;margin-top:10px">Your advisor is reading your shelves — this can take a moment.</div>`}
     </div>
 
 
@@ -549,9 +549,9 @@ export function Genie() {
       ${shown.length >= 2 ? html`<button class="btn btn-block" onClick=${() => {
         try { sessionStorage.setItem('rg_choose_seed', JSON.stringify(shown.map((r) => ({ title: r.book.title, author: r.book.author, coverUrl: r.book.coverUrl || null })))); } catch (_e) {}
         go('/choose');
-      }}><${Icon} name="books" /> Can’t decide? Talk these through with Mabel</button>` : ''}
+      }}><${Icon} name="books" /> Can’t decide? Talk these through with your advisor</button>` : ''}
       ${shown.length === 0 ? html`<div class="card">
-        <p class="muted" style="margin:0;font-size:13.5px">${recs.length ? 'Everything that came back is already on your shelves.' : 'Mabel didn’t surface fresh picks this round.'} Try a different mood, or tap <b>Help me choose</b> above.</p>
+        <p class="muted" style="margin:0;font-size:13.5px">${recs.length ? 'Everything that came back is already on your shelves.' : 'Your advisor didn’t surface fresh picks this round.'} Try a different mood, or tap <b>Help me choose</b> above.</p>
         ${diag && (diag.raw || diag.reason) && html`<details style="margin-top:10px">
           <summary class="dim" style="font-size:12px;cursor:pointer">What happened? (tap, then share with Claude)</summary>
           <pre style="white-space:pre-wrap;word-break:break-word;font-size:11px;color:var(--text-3);background:var(--bg-2);border-radius:10px;padding:10px;margin:8px 0 0;max-height:220px;overflow:auto">${'reason: ' + (diag.reason || '—') + '\n\n' + (diag.raw ? String(diag.raw).slice(0, 1400) : '(no raw output)')}</pre>
@@ -573,7 +573,7 @@ export function Genie() {
       <div class="blind-gift" style="width:54px;height:54px;margin:0;border-radius:14px"><${Icon} name="gift" /></div>
       <div class="grow">
         <div class="book-title">Blind date with a book</div>
-        <div class="book-note">Mabel picked something for you. No cover, no blurb — just vibes.</div>
+        <div class="book-note">Your advisor picked something for you. No cover, no blurb — just vibes.</div>
       </div>
       <${Icon} name="chevright" cls="dim-ico" />
     </div>
@@ -590,7 +590,7 @@ export function BlindDate() {
     <div class="blind-card mt-8">
       ${!revealed ? html`<div>
         <div class="blind-gift"><${Icon} name="gift" /></div>
-        <div class="blind-title">A mystery pick from Mabel</div>
+        <div class="blind-title">A mystery pick from your advisor</div>
         <div class="blind-teaser">Three clues, nothing more:</div>
         <div class="tagrow" style="justify-content:center;margin-bottom:18px">
           ${bd.teasers.map((t) => html`<span class="tag">${t}</span>`)}
@@ -650,7 +650,7 @@ export function MidRead({ id }) {
       kickoff=${live && !resume}
       followups=${['How is it landing so far?', 'Honest take: if it still feels like homework by the halfway mark, it may not be your book.', 'Want my honest read on whether to push through?']}
       chips=${['I’m loving it', 'I’m not sure about it', 'Should I hang in there?', 'Where’s this going? (no spoilers)']}
-      placeholder="Tell Mabel…"
+      placeholder="Tell your advisor…"
       sendFn=${live ? ((api) => advisorChat({ kind: 'midread', book: b.title, messages: api })) : null}
       trigger=${live ? trigger : null}
       onExchange=${(live && item) ? ((api) => { saveReflection(item.id, 'midread', api).catch(() => {}); }) : null} />
@@ -726,7 +726,7 @@ export function Choose() {
         kickoff=${live}
         followups=${['What are you in the mood to feel right now?', 'Do you want to be hooked fast, or to slowly fall for the characters?', 'Okay — here’s how I’d choose between them.']}
         chips=${['A page-turner tonight', 'Something to sink into', 'Keep it light', 'Surprise me', ...chosen.slice(0, 2)]}
-        placeholder="Tell Mabel…"
+        placeholder="Tell your advisor…"
         sendFn=${live ? ((api) => advisorChat({ kind: 'choose', messages: api })) : null}
         trigger=${live ? trigger : null} />
     </div>`;
