@@ -62,7 +62,8 @@ Deno.serve(async (req) => {
         .filter((a: any) => !memberEmails.has((a.email || '').toLowerCase()))
         .map((a: any) => ({ email: a.email, created_at: a.created_at }));
       const { data: waitlist } = await admin.from('waitlist').select('id, name, email, note, created_at').order('created_at', { ascending: false });
-      return json({ members, pendingInvites, waitlist: waitlist || [] });
+      const { data: connections } = await admin.from('connections').select('user_a, user_b');
+      return json({ members, pendingInvites, waitlist: waitlist || [], connections: connections || [] });
     }
 
     // Invite = allowlist + send Supabase's "Invite user" email (service role).
@@ -93,6 +94,22 @@ Deno.serve(async (req) => {
         try { await admin.rpc('connect_users', { x: user.id, y: inviteeId }); } catch (e) { console.warn('[admin] connect:', String(e)); }
       }
       return json({ ok: true, emailed, already });
+    }
+    // Owner-brokered friendship: link (or unlink) any two members so they land in
+    // each other's circle — the stopgap until Reading Rooms provide the meeting place.
+    if (action === 'connect' || action === 'disconnect') {
+      const a = String(body.a || ''), b = String(body.b || '');
+      if (!a || !b || a === b) return json({ error: 'pick two different members' }, 400);
+      if (action === 'connect') {
+        const { error } = await admin.rpc('connect_users', { x: a, y: b });
+        if (error) return json({ error: error.message }, 500);
+      } else {
+        // Canonical order matches the table's (user_a < user_b); uuid text compare is byte-accurate.
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        const { error } = await admin.from('connections').delete().eq('user_a', lo).eq('user_b', hi);
+        if (error) return json({ error: error.message }, 500);
+      }
+      return json({ ok: true });
     }
     if (action === 'dismiss_waitlist') {
       const email = String(body.email || '').trim().toLowerCase();

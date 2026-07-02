@@ -1610,8 +1610,11 @@ export function Admin() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
 
+  const [connections, setConnections] = useState([]);
+  const [pairA, setPairA] = useState('');
+  const [pairB, setPairB] = useState('');
   const load = async () => {
-    try { const d = await adminList(); setMembers((d && d.members) || []); setPending((d && d.pendingInvites) || []); setWaitlist((d && d.waitlist) || []); setErr(''); }
+    try { const d = await adminList(); setMembers((d && d.members) || []); setPending((d && d.pendingInvites) || []); setWaitlist((d && d.waitlist) || []); setConnections((d && d.connections) || []); setErr(''); }
     catch (e) { setErr(e.message || String(e)); setMembers([]); }
   };
   useEffect(() => { if (st.me.isOwner) load(); }, [st.me.isOwner]);
@@ -1662,6 +1665,43 @@ export function Admin() {
       </div>
       <p class="dim" style="margin:8px 0 0;font-size:12px">Adds them to the guest list and emails them an invite — they click it, set a password, and they’re in.</p>
     </div>
+
+    ${(() => {
+      const active = (members || []).filter((m) => m);
+      const nameOf = (id) => { const m = active.find((x) => x.id === id); return m ? (m.display_name || m.email || '?') : '?'; };
+      const ownerId = (active.find((m) => m.isOwner) || {}).id;
+      const brokered = (connections || []).filter((c) => c.user_a !== ownerId && c.user_b !== ownerId);
+      const selStyle = 'flex:1;min-width:0;background:var(--bg-2);border:1px solid var(--line-2);border-radius:var(--r);color:var(--text);padding:10px 8px;font-size:14px';
+      const connectPair = async () => {
+        if (!pairA || !pairB || pairA === pairB) { toast('Pick two different members'); return; }
+        setBusy('connect');
+        try { await adminAct('connect', { a: pairA, b: pairB }); await load(); toast(`Connected ${nameOf(pairA)} + ${nameOf(pairB)}`); setPairA(''); setPairB(''); }
+        catch (e) { toast(e.message || 'Could not connect'); }
+        setBusy('');
+      };
+      return html`<div class="card mt-12">
+        <div class="section-title">Connect two members</div>
+        <p class="dim" style="margin:8px 0 10px;font-size:12px">Puts them in each other’s circle — they’ll see each other’s currently-reading and feed moments, and can recommend books to each other.</p>
+        <div class="row" style="gap:8px">
+          <select style=${selStyle} value=${pairA} onChange=${(e) => setPairA(e.target.value)}>
+            <option value="">Member…</option>
+            ${active.map((m) => html`<option value=${m.id}>${m.display_name || m.email}</option>`)}
+          </select>
+          <select style=${selStyle} value=${pairB} onChange=${(e) => setPairB(e.target.value)}>
+            <option value="">Member…</option>
+            ${active.map((m) => html`<option value=${m.id}>${m.display_name || m.email}</option>`)}
+          </select>
+          <button class="btn btn-primary" disabled=${!!busy} onClick=${connectPair}><${Icon} name="heart" /></button>
+        </div>
+        ${brokered.length ? html`<div class="mt-12">
+          ${brokered.map((c) => html`<div class="row" style="gap:8px;padding:6px 0;border-top:1px solid var(--line-2)">
+            <div class="grow book-note" style="margin:0">${nameOf(c.user_a)} ↔ ${nameOf(c.user_b)}</div>
+            <button class="tag" style="color:var(--danger)" disabled=${!!busy} onClick=${async () => { setBusy('disc'); try { await adminAct('disconnect', { a: c.user_a, b: c.user_b }); await load(); toast('Disconnected'); } catch (e) { toast(e.message || 'Failed'); } setBusy(''); }}>Unlink</button>
+          </div>`)}
+        </div>` : ''}
+        <p class="dim" style="margin:10px 0 0;font-size:11.5px">Your own connections aren’t listed — you’re connected to everyone you invite.</p>
+      </div>`;
+    })()}
 
     ${(pending || []).length ? html`<div class="section-head"><span class="section-title">Pending invites</span></div>
       ${pending.map((p) => html`<div class="card">
