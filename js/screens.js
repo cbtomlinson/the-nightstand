@@ -386,6 +386,13 @@ export function BookDetail({ id }) {
             onClick=${() => run(() => updateShelfItem(item.id, { availability: on ? item.availability.filter((x) => x !== key) : [...(item.availability || []), key] }), () => toast(on ? 'Removed ' + key : 'Marked on ' + key))}>${on ? '✓ ' : ''}${key}</button>`;
         })}
       </div>
+      <div class="dim" style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line-2);font-size:12.5px">
+        Check for this title:${' '}
+        <a class="gold" style="text-decoration:none" href=${'https://www.amazon.com/s?i=digital-text&k=' + encodeURIComponent(b.title + ' ' + (b.author || ''))} target="_blank" rel="noopener noreferrer">Kindle ↗</a> ·${' '}
+        <a class="gold" style="text-decoration:none" href=${'https://www.audible.com/search?keywords=' + encodeURIComponent(b.title + ' ' + (b.author || ''))} target="_blank" rel="noopener noreferrer">Audible ↗</a> ·${' '}
+        <a class="gold" style="text-decoration:none" href=${'https://open.spotify.com/search/' + encodeURIComponent(b.title + ' ' + (b.author || '')) + '/audiobooks'} target="_blank" rel="noopener noreferrer">Spotify ↗</a>
+        <span style="display:block;margin-top:4px">— found it? Tag it above. (Libby depends on your library, so that one stays manual.)</span>
+      </div>
       <button class=${'btn btn-block mt-12' + (item.libbyHold ? ' btn-primary' : '')} disabled=${busy}
         onClick=${() => run(() => updateShelfItem(item.id, { libby_hold: !item.libbyHold }), () => toast(item.libbyHold ? 'Removed Libby hold' : 'Marked on hold in Libby'))}>
         <${Icon} name="clock" /> ${item.libbyHold ? 'On hold in Libby ✓' : 'Mark as on hold in Libby'}

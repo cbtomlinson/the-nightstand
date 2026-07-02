@@ -87,12 +87,9 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   we keep hitting during testing. _(Chelsea asked to park this — 2026-06-27.)_
 
 ## Enhancements (discussed, not built — 2026-06-28)
-- **"Where to find it" deep links** _(proposed 2026-06-29, awaiting Chelsea's go)._ Keep the manual
-  chips as the source of truth, but add one-tap **search links** per service: Kindle store
-  (amazon.com search), Audible (audible.com search), Spotify (open.spotify.com audiobook search) —
-  tap to check availability yourself, then tag it. **Libby stays manual** (no universal search URL;
-  it's library-specific — Chelsea expected this). Open design question: make the existing chips
-  themselves the links, or a separate "check availability" row.
+- ✅ **"Where to find it" deep links** _(shipped 2026-06-29 — Option 1, the check row)._ Chips stay
+  one-tap toggles; a "Check for this title" row links to Kindle-store / Audible / Spotify searches
+  for the book. Libby stays manual (library-specific, no universal search URL).
 - **Hardcover API** _(parked 2026-06-29)._ Free GraphQL API with crowdsourced tags/moods/lists.
   Could enrich recommendations + metadata later, but it's a new integration + key to manage, and
   Mabel's rec quality is currently limited by taste data, not book metadata. Revisit when
