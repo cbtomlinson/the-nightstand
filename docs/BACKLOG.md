@@ -7,13 +7,15 @@ Things we've intentionally deferred (not bugs — decisions or future phases).
   ✅ DECIDED: **room invites = any member, from their own circle** (rooms grow organically; every
   entrant vouched-for). ✅ SHIPPED: **owner-brokered stopgap** — Admin "Connect two members" card
   (connect/unlink; uses connect_users RPC) so Kevin ↔ sister don't wait for Rooms.
-  ⏳ OPEN: what room co-membership means for friendship. Chelsea rejected all three framings
-  (meet-then-choose w/ requests · auto-connect · rooms-never-connect) — "none feel just right."
-  LEADING PROPOSAL ("the room IS the relationship"): drop friend-requests entirely; visibility =
-  your 1:1 connections ∪ your roommates. Sharing a room = you see each other's cozy signals
-  (currently-reading, just-finished, reactions) + can recommend/buddy-read; no accept ceremony —
-  being brought into a room by someone who knows you IS the consent. Kevin↔girlfriends stays
-  impossible (no shared room). Awaiting her reaction.
+  ✅ DECIDED (2026-06-29, Chelsea blessed "Option D — the room IS the relationship"):
+  NO friend-requests anywhere. Visibility = your 1:1 connections ∪ your roommates. Sharing a
+  room = you see each other's cozy signals (currently-reading, just-finished, reactions) + can
+  recommend/buddy-read; being brought into a room by someone who knows you IS the consent;
+  leave the room → lose the visibility. Kevin↔girlfriends stays impossible (no shared room).
+  Scale-safe: request-to-join / public rooms / block-report are additive later (she wants to
+  keep the door open for a bigger audience — do NOT build auto-connect). NEXT SESSION: design
+  + build buddy reads and Reading Rooms on this foundation (rooms grow via any member inviting
+  from their own circle).
 - **Blind date with a book — make it dynamic.** Right now it always reveals the same
   placeholder (Piranesi) and "Not for me" / "Not right now" don't change what shows.
   Options when we pick it up: pull a real hidden pick from the advisor each time
