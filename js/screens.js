@@ -9,6 +9,7 @@ import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importS
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
+import { parseStoryGraph, sniffImportFormat } from './lib/storygraph.js';
 import { adminList, adminAct } from './admin.js';
 
 export const go = (p) => { location.hash = p; };
@@ -1015,7 +1016,7 @@ export function Profile() {
       <div class="muted" style="font-size:13.5px;text-align:center;line-height:1.5">Your reading profile fills in as you rate books and talk with the advisor. Rate a few finished books — especially the 5★ and 1★ ones — and it’ll start to take shape.</div>
     </div>` : ''}
 
-    <button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads</button>
+    <button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads / StoryGraph</button>
     ${me.isOwner ? html`<button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/admin')}><${Icon} name="users" /> Admin console</button>` : ''}
 
     ${me.email ? html`<p class="dim" style="font-size:11.5px;text-align:center;margin:18px 0 0">Signed in as ${me.email}</p>` : ''}
@@ -1199,7 +1200,7 @@ export function Onboarding() {
 
     <div class="onb-steps">
       <div class="onb-step"><span class="num">1</span><span class="txt"><b>A quick intake interview</b> so I learn what you love.</span></div>
-      <div class="onb-step"><span class="num">2</span><span class="txt"><b>Add your books</b> — or import a Goodreads export.</span></div>
+      <div class="onb-step"><span class="num">2</span><span class="txt"><b>Add your books</b> — or import a Goodreads / StoryGraph export.</span></div>
       <div class="onb-step"><span class="num">3</span><span class="txt"><b>Get a recommendation</b> and meet your circle of readers.</span></div>
     </div>
 
@@ -1219,7 +1220,7 @@ export function Onboarding() {
     <button class="btn btn-primary btn-block btn-lg mt-16" disabled=${finishing} onClick=${async () => { try { await saveProfileBasics({ name, emoji }); } catch (_e) {} setStage('chat'); }}>
       <${Icon} name="sparkles" /> Begin the intake interview
     </button>
-    <button class="btn btn-ghost btn-block mt-12" disabled=${finishing} onClick=${() => finish('/import')}><${Icon} name="arrow" /> Import a Goodreads export instead</button>
+    <button class="btn btn-ghost btn-block mt-12" disabled=${finishing} onClick=${() => finish('/import')}><${Icon} name="arrow" /> Import a Goodreads / StoryGraph export instead</button>
     <button class="btn btn-ghost btn-block mt-12" disabled=${finishing} onClick=${() => finish('/shelf')}>Skip for now — I’ll set up later</button>
   </div>`;
 }
@@ -1525,6 +1526,7 @@ export function Search() {
 /* ---------------- Import from Goodreads ---------------- */
 export function Import() {
   const [rows, setRows] = useState(null);
+  const [src, setSrc] = useState(''); // 'Goodreads' | 'StoryGraph' (auto-detected)
   const [busy, setBusy] = useState(false);
   const [prog, setProg] = useState(null);
   const [done, setDone] = useState(null);
@@ -1534,8 +1536,12 @@ export function Import() {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
     try {
-      const parsed = parseGoodreads(await file.text());
-      if (!parsed.length) { toast('Couldn’t read that file — is it the Goodreads CSV?'); return; }
+      const text = await file.text();
+      // Both exports have a Title column, so sniff the header to pick the parser.
+      const fmt = sniffImportFormat(text);
+      const parsed = fmt === 'storygraph' ? parseStoryGraph(text) : parseGoodreads(text);
+      if (!parsed.length) { toast('Couldn’t read that file — is it the Goodreads or StoryGraph CSV?'); return; }
+      setSrc(fmt === 'storygraph' ? 'StoryGraph' : 'Goodreads');
       setDone(null); setProg(null); setRows(parsed);
     } catch (err) { toast('Could not read the file'); }
   };
@@ -1555,26 +1561,30 @@ export function Import() {
 
   return html`<div class="screen">
     <button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>
-    <div class="screen-title">Import from Goodreads</div>
-    <div class="screen-sub">Bring your whole library over in one go.</div>
+    <div class="screen-title">Import your library</div>
+    <div class="screen-sub">Bring your Goodreads or StoryGraph library over in one go.</div>
 
     <div class="card">
       <div class="section-title">How to get your file</div>
-      <ol class="muted" style="margin:10px 0 0;padding-left:20px;line-height:1.6;font-size:13.5px">
-        <li>On the Goodreads <b>desktop</b> site: <b>My Books → Import and export</b>.</li>
-        <li>Click <b>Export Library</b>, wait for the link to appear, and download the <b>.csv</b>.</li>
-        <li>Come back here and choose that file below.</li>
+      <p class="muted" style="margin:10px 0 4px;font-size:13.5px"><b>Goodreads</b> (desktop site):</p>
+      <ol class="muted" style="margin:0;padding-left:20px;line-height:1.6;font-size:13.5px">
+        <li><b>My Books → Import and export → Export Library</b>, then download the <b>.csv</b>.</li>
       </ol>
+      <p class="muted" style="margin:10px 0 4px;font-size:13.5px"><b>StoryGraph</b>:</p>
+      <ol class="muted" style="margin:0;padding-left:20px;line-height:1.6;font-size:13.5px">
+        <li>On thestorygraph.com: your profile → <b>Manage account → Manage your data → Export StoryGraph library</b>.</li>
+      </ol>
+      <p class="dim" style="margin:10px 0 0;font-size:12.5px">Either file works below — I’ll figure out which one it is.</p>
     </div>
 
     <div class="card mt-12">
       <input ref=${fileRef} type="file" accept=".csv,text/csv" style="display:none" onChange=${onFile} />
       <button class="btn btn-primary btn-block" onClick=${() => fileRef.current && fileRef.current.click()}>
-        <${Icon} name="arrow" /> ${rows ? 'Choose a different file' : 'Choose your Goodreads .csv'}
+        <${Icon} name="arrow" /> ${rows ? 'Choose a different file' : 'Choose your .csv file'}
       </button>
 
       ${rows && html`<div class="mt-12">
-        <div class="rec-line good"><${Icon} name="check" /><span>Found <b>${rows.length}</b> books — ${[['finished', 'Finished'], ['reading', 'Reading'], ['to_read', 'TBR'], ['dnf', 'DNF']].filter(([k]) => counts[k]).map(([k, l]) => counts[k] + ' ' + l).join(' · ')}.</span></div>
+        <div class="rec-line good"><${Icon} name="check" /><span>Found <b>${rows.length}</b> books in your <b>${src}</b> export — ${[['finished', 'Finished'], ['reading', 'Reading'], ['to_read', 'TBR'], ['dnf', 'DNF']].filter(([k]) => counts[k]).map(([k, l]) => counts[k] + ' ' + l).join(' · ')}.</span></div>
         ${!done && html`<button class="btn btn-primary btn-block mt-12" disabled=${busy} onClick=${run}>
           <${Icon} name="books" /> ${busy ? `Importing ${prog ? prog.done : 0}/${rows.length}…` : 'Add them to my shelves'}
         </button>`}

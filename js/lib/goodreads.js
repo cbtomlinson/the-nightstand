@@ -2,7 +2,7 @@
 // Goodreads quotes fields that contain commas and can put newlines *inside*
 // quoted fields (reviews), so we need a real tokenizer, not a line split.
 
-function parseCSV(text) {
+export function parseCSV(text) {
   const rows = [];
   let row = [], field = '', inQuotes = false;
   text = (text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
