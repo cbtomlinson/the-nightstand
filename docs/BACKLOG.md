@@ -97,6 +97,14 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 - ✅ **"Where to find it" deep links** _(shipped 2026-06-29 — Option 1, the check row)._ Chips stay
   one-tap toggles; a "Check for this title" row links to Kindle-store / Audible / Spotify searches
   for the book. Libby stays manual (library-specific, no universal search URL).
+- **Exact-book deep links for Spotify + Audible** _(queued 2026-07-03)._ Today's "Check for
+  this title" links open each service's *search* (and, via universal links, usually the app).
+  Upgrade to land on the exact book when found: **Spotify** via the official API (server-side
+  lookup in an edge fn using a Spotify client id/secret — Chelsea does the free ~5-min dev-app
+  signup; cache the audiobook ID in `books.meta.spotify_id`; fall back to the search link).
+  **Audible** via the unofficial `api.audible.com/1.0/catalog/products?title=` endpoint
+  (undocumented — could break anytime; graceful fallback to search; Chelsea OK'd trying it).
+  **Kindle/KU stays a search link** (Amazon's product API needs an approved Associates account).
 - **Hardcover API** _(parked 2026-06-29)._ Free GraphQL API with crowdsourced tags/moods/lists.
   Could enrich recommendations + metadata later, but it's a new integration + key to manage, and
   Mabel's rec quality is currently limited by taste data, not book metadata. Revisit when
