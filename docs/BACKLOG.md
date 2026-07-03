@@ -64,11 +64,14 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
 - ✅ **Slice 2 — the cozy feed (shipped 2026-06-28/29):** Reading Room feed shows the circle's
   currently-reading + recent "just finished" (with stars), newest first; **reactions** (❤️/😍/👏,
   optimistic, per-item); rec-notification = rose bubble on the advisor FAB that clears on respond.
-- ⏭️ **Slice 3 — buddy reads:** flexible (1+ people, jump in anytime), progress + discussion
-  (open / honor-system spoilers for v1). Wire the existing `BuddyRead` template; turn the
-  `#/buddy` route back on.
-- ⏭️ **Slice 4 — Reading Rooms:** persistent group rooms with a shared wall, optional pinned
-  group read, and a "books we've read together" shelf.
+- ✅ **Slices 3+4 — buddy reads + Reading Rooms (shipped 2026-07-03, Option D).** Rooms:
+  create (name+emoji) from the Circle tab, roster, invite-from-YOUR-circle, shared wall,
+  pinned group read; leave anytime, creator removes. Buddy reads: "Read it together" on any
+  book (friends and/or a whole room), per-reader progress from their own shelves, thread with
+  at-% message context, roommates can join the group read. Visibility unified to can_see
+  (connections ∪ roommates) across profiles/shelves/reactions/recs via my_visible_ids.
+  Needs the §18 migration run. NOT built yet: "books we've read together" room shelf (small
+  follow-up); realtime wall/thread updates (currently refresh-on-post).
 - ⏭️ **Taste-match %** — NOT built (was only a mockup label). Needs a **server-side** function
   (compare both users' loved/disliked + shared books + rating agreement -> return just the %,
   since shelves are now private), AND enough reading data to be meaningful — do it once Chelsea
