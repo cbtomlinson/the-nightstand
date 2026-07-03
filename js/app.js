@@ -41,6 +41,8 @@ function route(hash) {
     case 'friends':    return { screen: html`<${S.Friends} />`, nav: 'friends' };
     case 'friend':     return { screen: html`<${S.FriendDetail} id=${seg[1]} />`, nav: 'friends' };
     case 'midread':    return { screen: html`<${S.MidRead} id=${seg[1]} />`, nav: 'shelf' };
+    case 'room':       return { screen: html`<${S.RoomScreen} id=${seg[1]} />`, nav: 'friends' };
+    case 'buddy':      return { screen: html`<${S.BuddyRead} id=${seg[1]} />`, nav: 'friends' };
     case 'profile':    return { screen: html`<${S.Profile} />`, nav: 'profile' };
     case 'search':     return { screen: html`<${S.Search} />`, nav: 'shelf' };
     case 'import':     return { screen: html`<${S.Import} />`, nav: 'profile' };

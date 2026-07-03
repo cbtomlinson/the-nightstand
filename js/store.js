@@ -494,14 +494,25 @@ export async function listMembers() {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Your circle: the friends you're connected to (1:1), each with their current read.
-// RLS only returns connected people's profiles + their currently-reading items.
+// Everyone you can see (Option D: 1:1 connections ∪ roommates). Uses the
+// my_visible_ids RPC; falls back to the raw connections table pre-migration.
+async function visibleIds(userId) {
+  try {
+    const { data, error } = await supabase.rpc('my_visible_ids');
+    if (!error && Array.isArray(data)) {
+      return data.map((r) => (typeof r === 'string' ? r : (r && r.my_visible_ids))).filter(Boolean);
+    }
+  } catch (_e) {}
+  const { data: conns } = await supabase.from('connections')
+    .select('user_a, user_b').or(`user_a.eq.${userId},user_b.eq.${userId}`);
+  return (conns || []).map((c) => (c.user_a === userId ? c.user_b : c.user_a));
+}
+
+// Your circle: everyone you can see, each with their current read.
 export async function getCircle() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
-  const { data: conns } = await supabase.from('connections')
-    .select('user_a, user_b').or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
-  const ids = (conns || []).map((c) => (c.user_a === user.id ? c.user_b : c.user_a));
+  const ids = await visibleIds(user.id);
   if (!ids.length) return [];
   const [{ data: profs }, { data: reads }] = await Promise.all([
     supabase.from('profiles').select('id, display_name, email').in('id', ids),
@@ -530,9 +541,7 @@ export async function getPendingRecCount() {
 export async function getFeed() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
-  const { data: conns } = await supabase.from('connections')
-    .select('user_a, user_b').or(`user_a.eq.${user.id},user_b.eq.${user.id}`);
-  const ids = (conns || []).map((c) => (c.user_a === user.id ? c.user_b : c.user_a));
+  const ids = await visibleIds(user.id);
   if (!ids.length) return [];
   const [{ data: profs }, { data: items }] = await Promise.all([
     supabase.from('profiles').select('id, display_name, email').in('id', ids),
@@ -574,6 +583,151 @@ export async function toggleReaction(itemId, emoji, currentlyOn) {
   if (!user) return;
   if (currentlyOn) await supabase.from('reactions').delete().match({ item_id: itemId, user_id: user.id, emoji });
   else await supabase.from('reactions').insert({ item_id: itemId, user_id: user.id, emoji });
+}
+
+// ── Reading Rooms (Option D: the room is the relationship) ──────────────────
+const nameFromProfile = (p) => (p && (p.display_name || (p.email || '').split('@')[0])) || 'Reader';
+
+export async function getRooms() {
+  const { data } = await supabase.from('reading_rooms')
+    .select('id, name, emoji, created_by, room_members(user_id)')
+    .order('created_at', { ascending: true });
+  return (data || []).map((r) => ({
+    id: r.id, name: r.name, emoji: r.emoji || '📚', createdBy: r.created_by,
+    memberCount: (r.room_members || []).length,
+  }));
+}
+
+export async function createRoom(name, emoji) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  const { data, error } = await supabase.from('reading_rooms')
+    .insert({ name: (name || '').trim(), emoji: emoji || '📚', created_by: user.id })
+    .select('id').single();
+  if (error) throw error;
+  const { error: mErr } = await supabase.from('room_members')
+    .insert({ room_id: data.id, user_id: user.id, added_by: user.id });
+  if (mErr) console.warn('[store] createRoom seat:', mErr.message);
+  return data.id;
+}
+
+export async function getRoom(id) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: room } = await supabase.from('reading_rooms')
+    .select('id, name, emoji, created_by').eq('id', id).maybeSingle();
+  if (!room) return null;
+  const [{ data: mems }, { data: posts }, { data: reads }] = await Promise.all([
+    supabase.from('room_members').select('user_id').eq('room_id', id),
+    supabase.from('room_posts').select('id, user_id, body, created_at').eq('room_id', id).order('created_at', { ascending: true }).limit(200),
+    supabase.from('buddy_reads').select('id, member_ids, created_at, books(id, title, author, cover_url, cover_color)').eq('room_id', id).order('created_at', { ascending: false }).limit(1),
+  ]);
+  const ids = (mems || []).map((m) => m.user_id);
+  const { data: profs } = ids.length
+    ? await supabase.from('profiles').select('id, display_name, email').in('id', ids)
+    : { data: [] };
+  const nameOf = {};
+  for (const p of (profs || [])) nameOf[p.id] = nameFromProfile(p);
+  const gr = (reads || [])[0];
+  return {
+    id: room.id, name: room.name, emoji: room.emoji || '📚',
+    mine: room.created_by === user.id, myId: user.id,
+    members: ids.map((uid) => ({ id: uid, name: nameOf[uid] || 'Reader', initial: ((nameOf[uid] || 'R')[0] || 'R').toUpperCase() })),
+    posts: (posts || []).map((p) => ({ id: p.id, me: p.user_id === user.id, who: nameOf[p.user_id] || 'Reader', body: p.body, at: p.created_at })),
+    groupRead: gr && gr.books ? {
+      id: gr.id, joined: (gr.member_ids || []).includes(user.id),
+      book: { id: gr.books.id, title: gr.books.title, author: gr.books.author, coverUrl: gr.books.cover_url, cover: gr.books.cover_color },
+    } : null,
+  };
+}
+
+export async function postToRoom(roomId, body) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const text = (body || '').trim();
+  if (!user || !text) return;
+  const { error } = await supabase.from('room_posts').insert({ room_id: roomId, user_id: user.id, body: text });
+  if (error) throw error;
+}
+
+export async function addRoomMember(roomId, userId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const { error } = await supabase.from('room_members').insert({ room_id: roomId, user_id: userId, added_by: user.id });
+  if (error) throw error;
+}
+
+export async function leaveRoom(roomId) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('room_members').delete().match({ room_id: roomId, user_id: user.id });
+}
+
+// ── Buddy reads (flexible: 1+ people, jump in anytime) ──────────────────────
+export async function startBuddyRead(mb, memberIds, roomId = null) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not signed in');
+  const bookId = await findOrCreateBook(mb);
+  const members = [...new Set([user.id, ...(memberIds || [])])];
+  const { data, error } = await supabase.from('buddy_reads')
+    .insert({ book_id: bookId, created_by: user.id, member_ids: members, room_id: roomId })
+    .select('id').single();
+  if (error) throw error;
+  return data.id;
+}
+
+export async function myBuddyReads() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data } = await supabase.from('buddy_reads')
+    .select('id, member_ids, room_id, created_at, books(id, title, author, cover_url, cover_color)')
+    .order('created_at', { ascending: false }).limit(20);
+  return (data || []).filter((b) => b.books && (b.member_ids || []).includes(user.id)).map((b) => ({
+    id: b.id, count: (b.member_ids || []).length, roomId: b.room_id,
+    book: { id: b.books.id, title: b.books.title, author: b.books.author, coverUrl: b.books.cover_url, cover: b.books.cover_color },
+  }));
+}
+
+export async function getBuddyRead(id) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data: bd } = await supabase.from('buddy_reads')
+    .select('id, member_ids, created_by, room_id, book_id, books(id, title, author, cover_url, cover_color)')
+    .eq('id', id).maybeSingle();
+  if (!bd || !bd.books) return null;
+  const ids = bd.member_ids || [];
+  const [{ data: profs }, { data: msgs }, { data: prog }] = await Promise.all([
+    ids.length ? supabase.from('profiles').select('id, display_name, email').in('id', ids) : Promise.resolve({ data: [] }),
+    supabase.from('buddy_read_messages').select('id, user_id, body, at_pct, created_at').eq('buddy_read_id', id).order('created_at', { ascending: true }).limit(300),
+    ids.length ? supabase.from('shelf_items').select('user_id, status, progress').eq('book_id', bd.book_id).in('user_id', ids) : Promise.resolve({ data: [] }),
+  ]);
+  const nameOf = {};
+  for (const p of (profs || [])) nameOf[p.id] = nameFromProfile(p);
+  const progOf = {};
+  for (const s of (prog || [])) progOf[s.user_id] = s.status === 'finished' ? { done: true, pct: 100 } : { done: false, pct: s.progress || 0 };
+  return {
+    id: bd.id, joined: ids.includes(user.id), myId: user.id, roomId: bd.room_id, memberIds: ids,
+    myPct: (progOf[user.id] && progOf[user.id].pct) || 0,
+    book: { id: bd.books.id, title: bd.books.title, author: bd.books.author, coverUrl: bd.books.cover_url, cover: bd.books.cover_color },
+    members: ids.map((uid) => ({ id: uid, name: nameOf[uid] || 'Reader', initial: ((nameOf[uid] || 'R')[0] || 'R').toUpperCase(), prog: progOf[uid] || null })),
+    messages: (msgs || []).map((m) => ({ id: m.id, me: m.user_id === user.id, who: nameOf[m.user_id] || 'Reader', body: m.body, atPct: m.at_pct, at: m.created_at })),
+  };
+}
+
+export async function postBuddyMessage(id, body, atPct) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const text = (body || '').trim();
+  if (!user || !text) return;
+  const { error } = await supabase.from('buddy_read_messages')
+    .insert({ buddy_read_id: id, user_id: user.id, body: text, at_pct: atPct == null ? null : atPct });
+  if (error) throw error;
+}
+
+export async function joinBuddyRead(id, currentMemberIds) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const members = [...new Set([...(currentMemberIds || []), user.id])];
+  const { error } = await supabase.from('buddy_reads').update({ member_ids: members }).eq('id', id);
+  if (error) throw error;
 }
 
 // Recommend a book to one or more friends, with an optional note.

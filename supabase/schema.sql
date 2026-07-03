@@ -438,4 +438,150 @@ create policy reactions_insert on public.reactions for insert with check (
 drop policy if exists reactions_delete on public.reactions;
 create policy reactions_delete on public.reactions for delete using (user_id = auth.uid());
 
+-- ── 18) Reading Rooms + buddy reads (social slices 3+4, Option D) ──────────
+-- Option D: "the room is the relationship." Visibility = your 1:1 connections
+-- ∪ your roommates. No friend requests — being brought into a room by someone
+-- who knows you IS the consent; leave the room, lose the visibility.
+create table if not exists public.reading_rooms (
+  id         uuid primary key default gen_random_uuid(),
+  name       text not null,
+  emoji      text default '📚',
+  created_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+create table if not exists public.room_members (
+  room_id    uuid not null references public.reading_rooms(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  added_by   uuid references auth.users(id) on delete set null,
+  created_at timestamptz default now(),
+  primary key (room_id, user_id)
+);
+create table if not exists public.room_posts (
+  id         uuid primary key default gen_random_uuid(),
+  room_id    uuid not null references public.reading_rooms(id) on delete cascade,
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  body       text not null,
+  created_at timestamptz default now()
+);
+
+-- Helpers. is_room_member avoids RLS self-recursion on room_members; can_see is
+-- the Option-D visibility test; my_visible_ids lists everyone YOU can see.
+-- (These must stay executable by authenticated — RLS policies evaluate them.)
+create or replace function public.is_room_member(rid uuid, uid uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.room_members where room_id = rid and user_id = uid);
+$$;
+create or replace function public.can_see(x uuid, y uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select public.are_connected(x, y)
+      or exists (select 1 from public.room_members a
+                 join public.room_members b on a.room_id = b.room_id
+                 where a.user_id = x and b.user_id = y);
+$$;
+create or replace function public.my_visible_ids()
+returns setof uuid language sql stable security definer set search_path = public as $$
+  select case when user_a = auth.uid() then user_b else user_a end
+    from public.connections where auth.uid() in (user_a, user_b)
+  union
+  select b.user_id from public.room_members a
+    join public.room_members b on a.room_id = b.room_id
+    where a.user_id = auth.uid() and b.user_id <> auth.uid();
+$$;
+
+alter table public.reading_rooms enable row level security;
+alter table public.room_members  enable row level security;
+alter table public.room_posts    enable row level security;
+
+drop policy if exists rooms_select on public.reading_rooms;
+create policy rooms_select on public.reading_rooms for select
+  using (public.is_room_member(id, auth.uid()));
+drop policy if exists rooms_insert on public.reading_rooms;
+create policy rooms_insert on public.reading_rooms for insert
+  with check (created_by = auth.uid() and public.is_member());
+drop policy if exists rooms_update on public.reading_rooms;
+create policy rooms_update on public.reading_rooms for update using (created_by = auth.uid());
+drop policy if exists rooms_delete on public.reading_rooms;
+create policy rooms_delete on public.reading_rooms for delete using (created_by = auth.uid());
+
+-- Add someone = you're in the room AND they're in YOUR circle (Option D consent);
+-- the creator seats themselves at creation. Leave anytime; creator may remove.
+drop policy if exists roommem_select on public.room_members;
+create policy roommem_select on public.room_members for select
+  using (public.is_room_member(room_id, auth.uid()));
+drop policy if exists roommem_insert on public.room_members;
+create policy roommem_insert on public.room_members for insert
+  with check (
+    added_by = auth.uid() and (
+      (user_id = auth.uid() and exists (select 1 from public.reading_rooms r where r.id = room_id and r.created_by = auth.uid()))
+      or (public.is_room_member(room_id, auth.uid()) and public.are_connected(auth.uid(), user_id))
+    )
+  );
+drop policy if exists roommem_delete on public.room_members;
+create policy roommem_delete on public.room_members for delete
+  using (user_id = auth.uid()
+         or exists (select 1 from public.reading_rooms r where r.id = room_id and r.created_by = auth.uid()));
+
+drop policy if exists roomposts_select on public.room_posts;
+create policy roomposts_select on public.room_posts for select
+  using (public.is_room_member(room_id, auth.uid()));
+drop policy if exists roomposts_insert on public.room_posts;
+create policy roomposts_insert on public.room_posts for insert
+  with check (user_id = auth.uid() and public.is_room_member(room_id, auth.uid()));
+drop policy if exists roomposts_delete on public.room_posts;
+create policy roomposts_delete on public.room_posts for delete using (user_id = auth.uid());
+
+-- Buddy reads grow up: an optional home room (a room's "group read") + messages
+-- carry the sender's progress at post time (spoiler context).
+alter table public.buddy_reads add column if not exists room_id uuid references public.reading_rooms(id) on delete set null;
+alter table public.buddy_read_messages add column if not exists at_pct int;
+
+-- Room members can SEE (and join) their room's group read; posting requires being
+-- a member of the read (the old check let anyone post into any thread).
+drop policy if exists buddy_select on public.buddy_reads;
+create policy buddy_select on public.buddy_reads for select
+  using (auth.uid() = any(member_ids) or created_by = auth.uid()
+         or (room_id is not null and public.is_room_member(room_id, auth.uid())));
+drop policy if exists buddymsg_insert on public.buddy_read_messages;
+create policy buddymsg_insert on public.buddy_read_messages for insert
+  with check (user_id = auth.uid() and exists (
+    select 1 from public.buddy_reads b where b.id = buddy_read_id and auth.uid() = any(b.member_ids)));
+-- Roommates may join their room's group read (update adds them to member_ids).
+drop policy if exists buddy_update on public.buddy_reads;
+create policy buddy_update on public.buddy_reads for update
+  using (created_by = auth.uid() or auth.uid() = any(member_ids)
+         or (room_id is not null and public.is_room_member(room_id, auth.uid())));
+
+-- Option D visibility swap: roommates count like connections everywhere.
+drop policy if exists profiles_select on public.profiles;
+create policy profiles_select on public.profiles for select
+  using (id = auth.uid() or public.can_see(auth.uid(), id));
+drop policy if exists shelf_select on public.shelf_items;
+create policy shelf_select on public.shelf_items for select using (
+  user_id = auth.uid()
+  or (is_public and public.can_see(auth.uid(), user_id) and (
+    status = 'reading'
+    or (status = 'finished' and updated_at > now() - interval '30 days')
+  ))
+);
+drop policy if exists reactions_select on public.reactions;
+create policy reactions_select on public.reactions for select using (
+  exists (select 1 from public.shelf_items s
+          where s.id = reactions.item_id
+            and (s.user_id = auth.uid() or public.can_see(auth.uid(), s.user_id)))
+);
+drop policy if exists reactions_insert on public.reactions;
+create policy reactions_insert on public.reactions for insert with check (
+  user_id = auth.uid()
+  and exists (select 1 from public.shelf_items s
+              where s.id = item_id
+                and (s.user_id = auth.uid() or public.can_see(auth.uid(), s.user_id)))
+);
+drop policy if exists recs_insert on public.recommendations;
+create policy recs_insert on public.recommendations for insert
+  with check (
+    recommended_by = auth.uid()
+    and user_id <> auth.uid()
+    and public.can_see(auth.uid(), user_id)
+  );
+
 -- Done. Tables, security, and badges are ready.

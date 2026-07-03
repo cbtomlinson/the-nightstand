@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection, getRooms, createRoom, getRoom, postToRoom, addRoomMember, leaveRoom, startBuddyRead, myBuddyReads, getBuddyRead, postBuddyMessage, joinBuddyRead } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -37,6 +37,50 @@ function WishCard() {
     <div class="hero-title">Your next read</div>
     <div class="hero-sub">Tell the advisor your mood and you’ll get a book you’ll actually love.</div>
     <button class="btn btn-primary"><${Icon} name="sparkles" /> Consult your advisor</button>
+  </div>`;
+}
+
+// "Read it together" — start a buddy read on this book with friends and/or a room.
+function BuddyButton({ book }) {
+  const [open, setOpen] = useState(false);
+  const [friends, setFriends] = useState(null);
+  const [rooms, setRooms] = useState([]);
+  const [picked, setPicked] = useState([]);
+  const [roomPick, setRoomPick] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const toggleOpen = () => {
+    const nx = !open; setOpen(nx);
+    if (nx && friends === null) {
+      getCircle().then(setFriends).catch(() => setFriends([]));
+      getRooms().then(setRooms).catch(() => {});
+    }
+  };
+  const start = async () => {
+    if (busy || (!picked.length && !roomPick)) return;
+    setBusy(true);
+    try {
+      let ids = picked;
+      if (roomPick) {
+        const r = await getRoom(roomPick);
+        ids = [...new Set([...picked, ...((r && r.members) || []).map((m) => m.id)])];
+      }
+      const bid = await startBuddyRead(book, ids, roomPick);
+      toast('Buddy read started 📖');
+      go('/buddy/' + bid);
+    } catch (e) { toast(e.message || 'Could not start the buddy read'); }
+    setBusy(false);
+  };
+  return html`<div class="card mt-12" style="padding:13px">
+    <button class="btn btn-ghost btn-block" onClick=${toggleOpen}><${Icon} name="users" /> Read it together${open ? ' ▴' : ''}</button>
+    ${open && html`<div class="mt-8">
+      ${friends === null ? html`<div class="dim" style="font-size:13px;padding:6px 2px">Loading your circle…</div>` : ''}
+      ${friends && friends.length ? html`<div class="section-title" style="margin-top:4px">With friends</div>
+        <div class="tagrow mt-8">${friends.map((f) => html`<button class=${'tag' + (picked.includes(f.id) ? ' love' : '')} onClick=${() => setPicked((p) => p.includes(f.id) ? p.filter((x) => x !== f.id) : [...p, f.id])}>${picked.includes(f.id) ? '✓ ' : ''}${f.name}</button>`)}</div>` : ''}
+      ${rooms.length ? html`<div class="section-title mt-12">Or a whole room</div>
+        <div class="tagrow mt-8">${rooms.map((r) => html`<button class=${'tag' + (roomPick === r.id ? ' love' : '')} onClick=${() => setRoomPick(roomPick === r.id ? null : r.id)}>${roomPick === r.id ? '✓ ' : ''}${r.emoji} ${r.name}</button>`)}</div>` : ''}
+      ${friends && !friends.length && !rooms.length ? html`<p class="dim" style="margin:6px 0 0;font-size:12.5px">No one in your circle yet — invite friends first.</p>` : ''}
+      <button class="btn btn-primary btn-block mt-12" disabled=${busy || (!picked.length && !roomPick)} onClick=${start}><${Icon} name="users" /> ${busy ? 'Starting…' : 'Start the buddy read'}</button>
+    </div>`}
   </div>`;
 }
 
@@ -331,6 +375,7 @@ export function BookDetail({ id }) {
     </div>
 
     <${RecommendButton} book=${b} />
+    <${BuddyButton} book=${b} />
 
     ${status === 'reading' && html`<div class="card mt-16">
       <div class="between"><span class="section-title">Your progress</span><span class="conf-num">${item.progress || 0}%</span></div>
@@ -861,32 +906,127 @@ export function Feed() {
   </div>`;
 }
 
-/* ---------------- Buddy read ---------------- */
-export function BuddyRead() {
-  const br = D.buddyRead;
-  const b = D.getBook(br.bookId);
+/* ---------------- Buddy read (real: 1+ readers, jump in anytime) ---------------- */
+export function BuddyRead({ id }) {
+  const [bd, setBd] = useState(undefined); // undefined = loading, null = not found
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => getBuddyRead(id).then(setBd).catch(() => setBd(null));
+  useEffect(() => { load(); }, [id]);
+
+  const back = html`<button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>`;
+  if (bd === undefined) return html`<div class="screen">${back}<div class="card center-col" style="padding:26px"><div class="dim">Opening the buddy read…</div></div></div>`;
+  if (!bd) return html`<div class="screen">${back}<div class="empty mt-20"><${Icon} name="alert" /><div>This buddy read isn't yours to see.</div></div></div>`;
+
+  const send = async () => {
+    const t = msg.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    try { await postBuddyMessage(id, t, bd.myPct); setMsg(''); await load(); }
+    catch (_e) { toast('Could not send — try again'); }
+    setBusy(false);
+  };
+  const join = async () => {
+    try { await joinBuddyRead(id, bd.memberIds); toast('You’re in 🎉'); load(); }
+    catch (e) { toast(e.message || 'Could not join'); }
+  };
+
   return html`<div class="screen">
-    <button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>
+    ${back}
     <div class="row mt-8" style="gap:14px;align-items:flex-start">
-      <${BookCover} book=${b} />
-      <div class="grow">
-        <div class="book-title" style="font-size:18px">${b.title}</div>
-        <div class="book-author">Buddy read with ${br.with}</div>
+      <${BookCover} book=${bd.book} />
+      <div class="grow" style="min-width:0">
+        <div class="book-title" style="font-size:18px">${bd.book.title}</div>
+        <div class="book-author">${bd.book.author || ''}</div>
+        <div class="book-note" style="margin-top:4px">Buddy read · ${bd.members.length} reader${bd.members.length === 1 ? '' : 's'}</div>
       </div>
     </div>
+
+    ${!bd.joined ? html`<button class="btn btn-primary btn-block mt-12" onClick=${join}><${Icon} name="users" /> Join this read</button>` : ''}
+
     <div class="card mt-16">
-      <div class="between"><span class="muted">You</span><span class="dim">${br.yourProgress}%</span></div>
-      <${Progress} pct=${br.yourProgress} />
-      <div class="between mt-12"><span class="muted">${br.with}</span><span class="dim">${br.theirProgress}%</span></div>
-      <div class="progress"><i style=${`width:${br.theirProgress}%;background:${br.withColor}`}></i></div>
+      ${bd.members.map((m) => html`
+        <div class="between" style="margin-top:6px"><span class="muted">${m.name}</span><span class="dim">${m.prog ? (m.prog.done ? 'finished ✓' : m.prog.pct + '%') : '—'}</span></div>
+        ${m.prog && !m.prog.done ? html`<${Progress} pct=${m.prog.pct} />` : ''}`)}
+      <p class="dim" style="margin:10px 0 0;font-size:11.5px">Progress comes from each reader’s own shelf — update yours on the book page.</p>
     </div>
-    <div class="section-head"><span class="section-title">Your private thread</span></div>
+
+    <div class="section-head"><span class="section-title">The thread</span></div>
     <div class="chat">
-      ${br.thread.map((m) => html`<div class=${'bubble ' + (m.me ? 'me' : 'genie')}>${!m.me && html`<div class="who">${m.who}</div>`}<div>${m.text}</div></div>`)}
+      ${bd.messages.length
+        ? bd.messages.map((m) => html`<div class=${'bubble ' + (m.me ? 'me' : 'genie')}>${!m.me && html`<div class="who">${m.who}${m.atPct != null ? ' · at ' + m.atPct + '%' : ''}</div>`}<div>${m.body}</div>${m.me && m.atPct != null ? html`<div style="font-size:10.5px;margin-top:3px;text-align:right;opacity:0.7">at ${m.atPct}%</div>` : ''}</div>`)
+        : html`<p class="dim" style="font-size:12.5px">No messages yet — kick it off. (Honor system on spoilers: mind where your buddies are.)</p>`}
+    </div>
+    ${bd.joined ? html`<div class="chat-input">
+      <textarea rows="1" placeholder="Message the group…" value=${msg} onInput=${(e) => setMsg(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>
+      <button class="send-btn" disabled=${busy} onClick=${send}><${Icon} name="send" /></button>
+    </div>` : ''}
+  </div>`;
+}
+
+/* ---------------- A Reading Room (shared space: wall + group read) ---------------- */
+export function RoomScreen({ id }) {
+  const [room, setRoom] = useState(undefined);
+  const [circle, setCircle] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = () => getRoom(id).then(setRoom).catch(() => setRoom(null));
+  useEffect(() => { load(); getCircle().then(setCircle).catch(() => {}); }, [id]);
+
+  const back = html`<button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>`;
+  if (room === undefined) return html`<div class="screen">${back}<div class="card center-col" style="padding:26px"><div class="dim">Opening the room…</div></div></div>`;
+  if (!room) return html`<div class="screen">${back}<div class="empty mt-20"><${Icon} name="alert" /><div>This room isn't yours to see.</div></div></div>`;
+
+  const addable = circle.filter((f) => !room.members.some((m) => m.id === f.id));
+  const send = async () => {
+    const t = msg.trim();
+    if (!t || busy) return;
+    setBusy(true);
+    try { await postToRoom(id, t); setMsg(''); await load(); }
+    catch (_e) { toast('Could not post — try again'); }
+    setBusy(false);
+  };
+
+  return html`<div class="screen">
+    ${back}
+    <div class="row mt-8" style="gap:12px">
+      <div class="blind-gift" style="width:52px;height:52px;margin:0;border-radius:14px;box-shadow:none;background:var(--lilac-soft);font-size:26px">${room.emoji}</div>
+      <div class="grow" style="min-width:0">
+        <div class="screen-title" style="margin:0">${room.name}</div>
+        <div class="book-note" style="word-break:break-word">${room.members.map((m) => m.name).join(' · ')}</div>
+      </div>
+    </div>
+    <div class="tagrow mt-12">
+      <button class="tag" onClick=${() => setAdding(!adding)}>＋ Invite from your circle</button>
+      ${!room.mine ? html`<button class="tag" style="color:var(--danger)" onClick=${async () => { try { await leaveRoom(id); } catch (_e) {} toast('Left the room'); go('/friends'); }}>Leave</button>` : ''}
+    </div>
+    ${adding ? html`<div class="card mt-8">
+      ${addable.length
+        ? html`<div class="tagrow">${addable.map((f) => html`<button class="tag" onClick=${async () => { try { await addRoomMember(id, f.id); toast('Added ' + f.name); setAdding(false); load(); } catch (e) { toast(e.message || 'Could not add'); } }}>＋ ${f.name}</button>`)}</div>`
+        : html`<p class="dim" style="margin:0;font-size:12.5px">Everyone in your circle is already here — you can only seat people you know.</p>`}
+    </div>` : ''}
+
+    <div class="section-head"><span class="section-title">Group read</span></div>
+    ${room.groupRead
+      ? html`<div class="card" onClick=${() => go('/buddy/' + room.groupRead.id)} role="button" style="cursor:pointer">
+          <div class="row" style="gap:12px">
+            <${BookCover} book=${room.groupRead.book} />
+            <div class="grow" style="min-width:0"><div class="book-title">${room.groupRead.book.title}</div><div class="book-note">${room.groupRead.joined ? 'Tap to open the discussion' : 'Tap to join the discussion'}</div></div>
+            <${Icon} name="chevright" cls="dim-ico" />
+          </div>
+        </div>`
+      : html`<div class="card"><p class="dim" style="margin:0;font-size:12.5px">No group read yet — open any book and tap <b>Read it together</b>, then pick this room.</p></div>`}
+
+    <div class="section-head"><span class="section-title">The wall</span></div>
+    <div class="chat">
+      ${room.posts.length
+        ? room.posts.map((p) => html`<div class=${'bubble ' + (p.me ? 'me' : 'genie')}>${!p.me && html`<div class="who">${p.who}</div>`}<div>${p.body}</div></div>`)
+        : html`<p class="dim" style="font-size:12.5px">Quiet in here… say hi 👋</p>`}
     </div>
     <div class="chat-input">
-      <textarea placeholder=${'Message ' + br.with + '…'}></textarea>
-      <button class="send-btn"><${Icon} name="send" /></button>
+      <textarea rows="1" placeholder="Say something…" value=${msg} onInput=${(e) => setMsg(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}></textarea>
+      <button class="send-btn" disabled=${busy} onClick=${send}><${Icon} name="send" /></button>
     </div>
   </div>`;
 }
@@ -894,11 +1034,59 @@ export function BuddyRead() {
 /* ---------------- Friends (Kindred Readers) ---------------- */
 export function Friends() {
   const [circle, setCircle] = useState(null);
-  useEffect(() => { getCircle().then(setCircle).catch(() => setCircle([])); }, []);
+  const [rooms, setRooms] = useState(null);
+  const [buddies, setBuddies] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [roomName, setRoomName] = useState('');
+  const [roomEmoji, setRoomEmoji] = useState('📚');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    getCircle().then(setCircle).catch(() => setCircle([]));
+    getRooms().then(setRooms).catch(() => setRooms([]));
+    myBuddyReads().then(setBuddies).catch(() => {});
+  }, []);
+  const create = async () => {
+    if (busy || !roomName.trim()) return;
+    setBusy(true);
+    try { const rid = await createRoom(roomName, roomEmoji); setCreating(false); setRoomName(''); toast('Room created 🎉'); go('/room/' + rid); }
+    catch (e) { toast(e.message || 'Could not create the room'); }
+    setBusy(false);
+  };
   return html`<div class="screen">
     <div class="screen-title">Your circle</div>
-    <div class="screen-sub">Your people — and what they’re reading.</div>
+    <div class="screen-sub">Your people, your rooms, and what everyone’s reading.</div>
 
+    <div class="section-head"><span class="section-title">Reading rooms</span>
+      <button class="section-link" style="background:none;border:0;cursor:pointer" onClick=${() => setCreating(!creating)}>${creating ? 'Cancel' : '+ New room'}</button></div>
+    ${creating ? html`<div class="card">
+      <div class="field" style="margin-bottom:10px">
+        <label>Room name</label>
+        <input placeholder="Family · Book club · The girls…" value=${roomName} onInput=${(e) => setRoomName(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter') create(); }} />
+      </div>
+      <div class="tagrow" style="margin-bottom:10px">${['📚', '🌙', '🍷', '☕', '🕯️', '🌸'].map((em) => html`<button class=${'tag' + (roomEmoji === em ? ' love' : '')} onClick=${() => setRoomEmoji(em)}>${em}</button>`)}</div>
+      <button class="btn btn-primary btn-block" disabled=${busy || !roomName.trim()} onClick=${create}><${Icon} name="plus" /> Create room</button>
+      <p class="dim" style="margin:8px 0 0;font-size:12px">A cozy shared space — everyone in a room sees each other. You seat people from your own circle.</p>
+    </div>` : ''}
+    ${rooms === null ? '' : rooms.length === 0 && !creating
+      ? html`<div class="card"><p class="dim" style="margin:0;font-size:13px">No rooms yet — make one for your book club, your family, whoever.</p></div>`
+      : rooms.map((r) => html`<div class="card" onClick=${() => go('/room/' + r.id)} role="button" style="cursor:pointer">
+          <div class="row" style="gap:12px">
+            <div class="blind-gift" style="width:44px;height:44px;margin:0;border-radius:12px;box-shadow:none;background:var(--lilac-soft);font-size:22px">${r.emoji}</div>
+            <div class="grow" style="min-width:0"><div class="book-title">${r.name}</div><div class="book-note">${r.memberCount} reader${r.memberCount === 1 ? '' : 's'}</div></div>
+            <${Icon} name="chevright" cls="dim-ico" />
+          </div>
+        </div>`)}
+
+    ${buddies.length ? html`<div class="section-head"><span class="section-title">Buddy reads</span></div>
+      ${buddies.map((bd) => html`<div class="card" onClick=${() => go('/buddy/' + bd.id)} role="button" style="cursor:pointer">
+        <div class="row" style="gap:12px">
+          <${BookCover} book=${bd.book} />
+          <div class="grow" style="min-width:0"><div class="book-title">${bd.book.title}</div><div class="book-note">${bd.count} reading together</div></div>
+          <${Icon} name="chevright" cls="dim-ico" />
+        </div>
+      </div>`)}` : ''}
+
+    <div class="section-head"><span class="section-title">Friends</span></div>
     ${circle === null
       ? html`<div class="card center-col" style="padding:26px"><div class="dim">Loading your circle…</div></div>`
       : circle.length === 0
