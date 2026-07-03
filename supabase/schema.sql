@@ -221,7 +221,10 @@ create policy books_select on public.books for select using (public.is_member())
 drop policy if exists books_insert on public.books;
 create policy books_insert on public.books for insert with check (public.is_member());
 drop policy if exists books_update on public.books;
-create policy books_update on public.books for update using (created_by = auth.uid());
+-- Shared-catalog enrichment (cover + cached description) must work for every member,
+-- not just whoever created the row — creator-only made those persists silently fail
+-- for everyone else. Fine for an invite-only club; revisit if the club opens up.
+create policy books_update on public.books for update using (public.is_member());
 
 -- shelf_items: you manage yours; members read others' public ones
 drop policy if exists shelf_select on public.shelf_items;
@@ -238,14 +241,26 @@ create policy shelf_delete on public.shelf_items for delete using (user_id = aut
 drop policy if exists reflections_all on public.reflections;
 create policy reflections_all on public.reflections for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
+-- One resumable thread per (user, shelf item, kind): dedupe (keep newest), then enforce.
+delete from public.reflections a using public.reflections b
+  where a.user_id = b.user_id and a.shelf_item_id is not distinct from b.shelf_item_id
+    and a.kind is not distinct from b.kind and a.created_at < b.created_at;
+create unique index if not exists reflections_thread_key
+  on public.reflections (user_id, shelf_item_id, kind) where shelf_item_id is not null;
 
 -- recommendations: visible to recipient or sender; you manage your own
 drop policy if exists recs_select on public.recommendations;
 create policy recs_select on public.recommendations for select
   using (user_id = auth.uid() or recommended_by = auth.uid());
 drop policy if exists recs_insert on public.recommendations;
+-- Only send recs AS yourself, TO someone in your circle. (The old OR-shaped check
+-- let a member send to ANY user — or forge a rec that claimed to be FROM a friend.)
 create policy recs_insert on public.recommendations for insert
-  with check (user_id = auth.uid() or recommended_by = auth.uid());
+  with check (
+    recommended_by = auth.uid()
+    and user_id <> auth.uid()
+    and public.are_connected(auth.uid(), user_id)
+  );
 drop policy if exists recs_update on public.recommendations;
 create policy recs_update on public.recommendations for update using (user_id = auth.uid());
 
@@ -362,6 +377,11 @@ returns void language sql security definer set search_path = public as $$
   values (least(x, y), greatest(x, y))
   on conflict do nothing;
 $$;
+-- SECURITY: without this revoke, ANY signed-in member could call connect_users via
+-- the API and connect arbitrary pairs (themselves to anyone — or any two other
+-- people), bypassing the whole privacy model. Admin (service role) only.
+revoke execute on function public.connect_users(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.connect_users(uuid, uuid) to service_role;
 
 -- Tighten visibility now that there's a real graph:
 --  • profiles: you see only yourself + people you're connected to.

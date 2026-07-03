@@ -209,9 +209,12 @@ async function refresh(userId, profile) {
 // book — later sessions find them already cached. Claude-written fallbacks (for the
 // few titles Google can't describe) are capped per pass; stragglers fill lazily on open.
 let backfillingDesc = false;
+// Books already attempted this session — without this, titles that yield NO
+// description get re-fetched on every refresh (each shelf edit / chat exchange).
+const descTried = new Set();
 async function backfillDescriptions(booksById) {
   if (backfillingDesc || !advisorReady()) return;
-  const missing = Object.values(booksById).filter((b) => b && b.title && !b.description);
+  const missing = Object.values(booksById).filter((b) => b && b.title && !b.description && !descTried.has(b.id));
   if (!missing.length) return;
   backfillingDesc = true;
   let genBudget = 8;
@@ -219,6 +222,7 @@ async function backfillDescriptions(booksById) {
     for (let i = 0; i < missing.length; i += 3) {
       await Promise.all(missing.slice(i, i + 3).map(async (b) => {
         try {
+          descTried.add(b.id);
           const e = await advisorEnrich({ title: b.title, author: b.author || '' });
           let d = (e && e.description) || null;
           if (!d && genBudget > 0) { genBudget--; d = await advisorDescribe({ title: b.title, author: b.author || '' }); }
