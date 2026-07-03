@@ -1658,6 +1658,7 @@ export function SetPassword({ email, onDone }) {
 
 /* ---------------- Search & add a book ---------------- */
 function SearchResult({ b }) {
+  const st = useStore();
   const [open, setOpen] = useState(false);
   const [enrich, setEnrich] = useState(undefined); // undefined = not fetched, null = none
   const [loadingE, setLoadingE] = useState(false);
@@ -1665,6 +1666,21 @@ function SearchResult({ b }) {
   const [added, setAdded] = useState(null);        // shelf label once added
   const [addedStatus, setAddedStatus] = useState(null); // which shelf key (for the active button)
   const [busy, setBusy] = useState(false);
+
+  // Is this result already on one of their shelves? (match by title)
+  const existing = (() => {
+    if (!st.ready) return null;
+    const t = (b.title || '').toLowerCase();
+    for (const s of ['reading', 'to_read', 'finished', 'dnf']) {
+      const item = (st.shelves[s] || []).find((i) => {
+        const bk = st.booksById[i.bookId];
+        return bk && (bk.title || '').toLowerCase() === t;
+      });
+      if (item) return { status: s, bookId: item.bookId };
+    }
+    return null;
+  })();
+  const shelfStatus = addedStatus || (existing && existing.status); // where it lives now
 
   const toggle = () => {
     const nx = !open; setOpen(nx);
@@ -1703,7 +1719,9 @@ function SearchResult({ b }) {
         <div class="book-author">${b.author}${b.year ? ' · ' + b.year : ''}</div>
         ${added
           ? html`<div class="book-note gold">On your ${added} shelf</div>`
-          : html`<div class="book-note">Tap for details & to pick a shelf</div>`}
+          : existing
+            ? html`<div class="book-note gold">Already on your ${statusMove[existing.status]} shelf</div>`
+            : html`<div class="book-note">Tap for details & to pick a shelf</div>`}
       </div>
       <${Icon} name="chevright" cls="dim-ico" />
     </div>
@@ -1715,8 +1733,9 @@ function SearchResult({ b }) {
       <div class="section-title mt-12">Add to…</div>
       <div class="tagrow mt-8">
         ${[['to_read', 'TBR'], ['reading', 'Reading'], ['finished', 'Finished'], ['dnf', 'DNF']].map(([s, label]) =>
-          html`<button class="tag" disabled=${busy} style=${addedStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${addedStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
+          html`<button class="tag" disabled=${busy} style=${shelfStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${shelfStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
       </div>
+      ${shelfStatus ? html`<button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/shelf/' + shelfStatus)}><${Icon} name="books" /> Go to your shelf</button>` : ''}
       <div class="tagrow mt-8">
         <button class="tag" onClick=${() => shareBook({ title: b.title, author: b.author, coverUrl: cover })}><${Icon} name="send" /> Share</button>
         <a class="tag" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>
