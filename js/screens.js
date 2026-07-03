@@ -200,7 +200,15 @@ function sortShelf(items, sortBy, booksById) {
   if (sortBy === 'title') arr.sort((a, b) => (bk(a).title || '').localeCompare(bk(b).title || ''));
   else if (sortBy === 'author') arr.sort((a, b) => (bk(a).author || '').localeCompare(bk(b).author || ''));
   else if (sortBy === 'libby') arr.sort((a, b) => (b.libbyHold ? 1 : 0) - (a.libbyHold ? 1 : 0));
-  else arr.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)); // date added, newest first
+  else {
+    // "Date added" = when it LANDED ON THIS SHELF: a book added weeks ago but
+    // finished today belongs at the top of Finished, not buried by its add-date.
+    const key = (i) => new Date(
+      (i.status === 'finished' && (i.finishedAt || i.updatedAt))
+      || (i.status === 'dnf' && i.updatedAt)
+      || i.createdAt || 0);
+    arr.sort((a, b) => key(b) - key(a));
+  }
   return arr;
 }
 

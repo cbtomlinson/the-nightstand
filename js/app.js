@@ -61,6 +61,9 @@ function Shell({ profile } = {}) {
   const avInitial = (profile && profile.display_name ? profile.display_name[0] : (me.initial || 'R')).toUpperCase();
   const { screen, nav, bare } = route(hash);
   const navCls = (k) => 'nav-item' + (nav === k ? ' active' : '');
+  // iOS-style scroll-to-top: tap the top bar (or re-tap the tab you're already on).
+  const toTop = () => { const m = document.querySelector('.app-main'); if (m) m.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const navGo = (k, path) => (nav === k ? toTop() : go(path));
   const [showTour, setShowTour] = useState(() => { try { return !localStorage.getItem('rg_tour_seen'); } catch (e) { return false; } });
   const [recCount, setRecCount] = useState(0); // unread friend recs → bubble on the advisor FAB
   const closeTour = () => { try { localStorage.setItem('rg_tour_seen', '1'); } catch (e) {} setShowTour(false); };
@@ -96,8 +99,8 @@ function Shell({ profile } = {}) {
   }, []);
 
   return html`<div class="app">
-    ${!bare && html`<header class="topbar">
-      <div class="brand" onClick=${() => go('/shelf')} role="button">
+    ${!bare && html`<header class="topbar" onClick=${(e) => { if (e.target.closest('button') || e.target.closest('.brand')) return; toTop(); }}>
+      <div class="brand" onClick=${() => (nav === 'shelf' ? toTop() : go('/shelf'))} role="button">
         <span class="brand-mark">${brand.logo()}</span>
         <span class="brand-name">${brand.wordmark()}</span>
         <span class="beta-tag">Beta</span>
@@ -114,11 +117,11 @@ function Shell({ profile } = {}) {
     <main class="app-main">${screen}</main>
 
     ${!bare && html`<nav class="bottom-nav">
-      <button class=${navCls('shelf')} onClick=${() => go('/shelf')}><${Icon} name="books" /><span>Shelf</span></button>
-      <button class=${navCls('feed')} onClick=${() => go('/feed')}><${Icon} name="feed" /><span>Room</span></button>
-      <button class="nav-fab" style="position:relative" onClick=${() => go('/genie')} aria-label="Ask the advisor"><${Icon} name="sparkles" />${recCount > 0 ? html`<span style="position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;padding:0 5px;background:var(--rose);color:#3a1224;font-size:11px;font-weight:700;line-height:1;border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--bg)">${recCount}</span>` : ''}</button>
-      <button class=${navCls('friends')} onClick=${() => go('/friends')}><${Icon} name="users" /><span>Circle</span></button>
-      <button class=${navCls('profile')} onClick=${() => go('/profile')}><${Icon} name="user" /><span>You</span></button>
+      <button class=${navCls('shelf')} onClick=${() => navGo('shelf', '/shelf')}><${Icon} name="books" /><span>Shelf</span></button>
+      <button class=${navCls('feed')} onClick=${() => navGo('feed', '/feed')}><${Icon} name="feed" /><span>Room</span></button>
+      <button class="nav-fab" style="position:relative" onClick=${() => navGo('genie', '/genie')} aria-label="Ask the advisor"><${Icon} name="sparkles" />${recCount > 0 ? html`<span style="position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;padding:0 5px;background:var(--rose);color:#3a1224;font-size:11px;font-weight:700;line-height:1;border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--bg)">${recCount}</span>` : ''}</button>
+      <button class=${navCls('friends')} onClick=${() => navGo('friends', '/friends')}><${Icon} name="users" /><span>Circle</span></button>
+      <button class=${navCls('profile')} onClick=${() => navGo('profile', '/profile')}><${Icon} name="user" /><span>You</span></button>
     </nav>`}
 
     ${showTour ? html`<${S.Tour} onClose=${closeTour} />` : ''}

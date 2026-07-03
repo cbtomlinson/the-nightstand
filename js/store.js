@@ -158,7 +158,7 @@ async function refresh(userId, profile) {
       note: row.note, addedNote: row.added_note, source: row.source,
       atPct: row.dnf_at_pct, reason: row.dnf_reason,
       availability: row.availability || [], libbyHold: row.libby_hold || false,
-      createdAt: row.created_at,
+      createdAt: row.created_at, updatedAt: row.updated_at, finishedAt: row.finished_at,
     };
     if (shelves[row.status]) shelves[row.status].push(item);
   }
@@ -322,8 +322,10 @@ export async function addToShelf(mb, status = 'to_read') {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
   const bookId = await findOrCreateBook(mb);
+  const row = { user_id: user.id, book_id: bookId, status, is_public: true };
+  if (status === 'finished') row.finished_at = new Date().toISOString().slice(0, 10); // shelf ordering
   const { error } = await supabase.from('shelf_items')
-    .upsert({ user_id: user.id, book_id: bookId, status, is_public: true }, { onConflict: 'user_id,book_id' });
+    .upsert(row, { onConflict: 'user_id,book_id' });
   if (error) { console.error('[store] addToShelf:', error.message); throw error; }
   await refresh(user.id, await fetchProfile(user.id));
 }
@@ -331,8 +333,10 @@ export async function addToShelf(mb, status = 'to_read') {
 export async function setStatus(itemId, status, extra = {}) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return;
-  const { error } = await supabase.from('shelf_items')
-    .update({ status, ...extra, updated_at: new Date().toISOString() }).eq('id', itemId);
+  const patch = { status, ...extra, updated_at: new Date().toISOString() };
+  // Landing on Finished stamps the date (drives shelf ordering) unless one was passed.
+  if (status === 'finished' && !patch.finished_at) patch.finished_at = new Date().toISOString().slice(0, 10);
+  const { error } = await supabase.from('shelf_items').update(patch).eq('id', itemId);
   if (error) { console.error('[store] setStatus:', error.message); throw error; }
   await refresh(user.id, await fetchProfile(user.id));
 }
