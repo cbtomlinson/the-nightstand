@@ -44,7 +44,7 @@
   --sans:  system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
   --maxw: 480px;
-  --nav-h: 74px;
+  --nav-h: 64px; /* button zone only — the home-indicator inset is added on top; 74 read as "buttons floating high" */
 }
 
 * { box-sizing: border-box; }
