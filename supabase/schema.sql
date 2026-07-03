@@ -493,8 +493,10 @@ alter table public.room_members  enable row level security;
 alter table public.room_posts    enable row level security;
 
 drop policy if exists rooms_select on public.reading_rooms;
+-- Creator must be able to see the room from the instant it exists: INSERT…RETURNING
+-- and the self-seat both run BEFORE their membership row lands (chicken-and-egg).
 create policy rooms_select on public.reading_rooms for select
-  using (public.is_room_member(id, auth.uid()));
+  using (created_by = auth.uid() or public.is_room_member(id, auth.uid()));
 drop policy if exists rooms_insert on public.reading_rooms;
 create policy rooms_insert on public.reading_rooms for insert
   with check (created_by = auth.uid() and public.is_member());
