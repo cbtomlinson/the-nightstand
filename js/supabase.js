@@ -1,7 +1,13 @@
 // Supabase client. supabase-js is loaded from a CDN (the app needs the network
 // for data anyway). The publishable key is safe in the browser; RLS protects data.
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+
+// supabase-js is VENDORED (assets/vendor/supabase.umd.js, loaded in index.html
+// before this module) instead of imported from esm.sh. The CDN import sat on the
+// boot path — one stalled fetch on flaky wifi froze the whole app on the splash
+// before any in-app safety net could run. Vendoring removes that failure mode.
+const { createClient } = (globalThis.supabase || {});
+if (!createClient) throw new Error('Vendored supabase-js failed to load (assets/vendor/supabase.umd.js)');
 
 // supabase-js defaults to the Web Locks API to stop two token refreshes running at
 // once. In standalone-PWA / Safari that lock can DEADLOCK — auth calls never resolve

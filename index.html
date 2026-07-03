@@ -31,9 +31,25 @@
         <svg viewBox="0 0 64 64" width="76" height="76"><path d="M32 6l5.2 14.8L52 26l-14.8 5.2L32 46l-5.2-14.8L12 26l14.8-5.2z" fill="#e9b85c"/><path d="M50 40l2.4 6.6L59 49l-6.6 2.4L50 58l-2.4-6.6L41 49l6.6-2.4z" fill="#e9b85c"/></svg>
       </div>
       <div class="splash-sub">opening the library…</div>
+      <div id="boot-stuck" style="display:none;margin-top:16px;text-align:center">
+        <div style="font-size:12px;color:#8a7fa8;margin-bottom:10px">Taking longer than it should…</div>
+        <button onclick="location.reload()" style="background:transparent;border:1px solid #e9b85c;color:#e9b85c;border-radius:999px;padding:9px 22px;font-size:14px;font-family:inherit;cursor:pointer">Reload</button>
+      </div>
     </div>
   </div>
 
+  <script>
+    // Boot watchdog: if the app hasn't mounted in 8s (script stall, network blip),
+    // surface a Reload button on the static splash so nobody is ever stranded.
+    setTimeout(function () {
+      if (!window.__rgMounted) {
+        var el = document.getElementById('boot-stuck');
+        if (el) el.style.display = 'block';
+      }
+    }, 8000);
+  </script>
+  <!-- Supabase is vendored (single UMD file) so boot never depends on a CDN. -->
+  <script src="assets/vendor/supabase.umd.js"></script>
   <script type="module" src="js/app.js"></script>
   <script>
     // Dev mode: no service worker, so the app always loads fresh while we build.

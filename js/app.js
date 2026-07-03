@@ -226,4 +226,5 @@ function App() {
   return html`<${Shell} profile=${st.profile} />`;
 }
 
+try { window.__rgMounted = true; } catch (_e) {} // tell the index.html boot watchdog we made it
 render(html`<${App} />`, document.getElementById('app'));
