@@ -453,6 +453,36 @@ export async function mergeShelfItems(keep, drop) {
   await refresh(user.id, await fetchProfile(user.id));
 }
 
+// Re-fetch a book's cover + description using its (now corrected) author.
+// Covers and blurbs fetched while the author was blank can belong to a
+// same-titled different book — this overwrites both with the right match.
+export async function refreshBookDetails(bookId) {
+  const b = getState().booksById[bookId];
+  if (!b || !b.title) return false;
+  let coverUrl = null, desc = null;
+  try { coverUrl = await coverFor(b.title, b.author || ''); } catch (_e) {}
+  try {
+    if (advisorReady()) {
+      const e = await advisorEnrich({ title: b.title, author: b.author || '' });
+      desc = (e && e.description) || null;
+      if (!coverUrl && e && e.coverUrl) coverUrl = e.coverUrl;
+      if (!desc) desc = await advisorDescribe({ title: b.title, author: b.author || '' });
+    }
+  } catch (_e) {}
+  const patch = {};
+  if (coverUrl && coverUrl !== b.coverUrl) patch.cover_url = coverUrl;
+  if (desc && desc !== b.description) {
+    const { data: bk } = await supabase.from('books').select('meta').eq('id', bookId).maybeSingle();
+    patch.meta = { ...((bk && bk.meta) || {}), description: desc };
+  }
+  if (!Object.keys(patch).length) return false;
+  const { error } = await supabase.from('books').update(patch).eq('id', bookId);
+  if (error) { console.error('[store] refreshBookDetails:', error.message); throw error; }
+  const now = getState().booksById[bookId];
+  if (now) set({ booksById: { ...getState().booksById, [bookId]: { ...now, coverUrl: coverUrl || now.coverUrl, description: desc || now.description } } });
+  return true;
+}
+
 // Remove a book from the shelves entirely (no status change, just gone).
 export async function removeFromShelf(itemId) {
   removeLocalShelfItem(itemId); // instant — drop it from the shelf right away

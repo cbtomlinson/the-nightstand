@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, mergeShelfItems, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection, getRooms, createRoom, getRoom, postToRoom, addRoomMember, leaveRoom, startBuddyRead, myBuddyReads, getBuddyRead, postBuddyMessage, joinBuddyRead } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, mergeShelfItems, refreshBookDetails, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection, getRooms, createRoom, getRoom, postToRoom, addRoomMember, leaveRoom, startBuddyRead, myBuddyReads, getBuddyRead, postBuddyMessage, joinBuddyRead } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -533,7 +533,14 @@ export function BookDetail({ id }) {
       <div class="tagrow mt-8">
         ${['reading', 'to_read', 'finished', 'dnf'].filter((s) => s !== status).map((s) => html`<button class="tag" disabled=${busy} onClick=${() => run(() => setStatus(item.id, s, s === 'finished' ? { finished_at: new Date().toISOString().slice(0, 10) } : {}), () => toast('Moved to ' + statusMove[s]))}>${statusMove[s]}</button>`)}
       </div>
-      <button class="btn btn-ghost btn-block mt-12" style=${'color:var(--danger)' + (confirmRm ? ';border-color:var(--danger)' : '')} disabled=${busy} onClick=${() => { if (!confirmRm) { setConfirmRm(true); return; } run(() => removeFromShelf(item.id), () => { toast('Removed from your shelves'); history.back(); }); }}>
+      <button class="btn btn-ghost btn-block mt-12" disabled=${busy} onClick=${async () => {
+        if (busy) return;
+        setBusy(true);
+        try { const changed = await refreshBookDetails(id); toast(changed ? 'Cover and blurb refreshed ✨' : 'No better match found'); }
+        catch (_e) { toast('Could not refresh — try again'); }
+        setBusy(false);
+      }}><${Icon} name="refresh" /> Wrong cover or blurb? Refresh details</button>
+      <button class="btn btn-ghost btn-block mt-8" style=${'color:var(--danger)' + (confirmRm ? ';border-color:var(--danger)' : '')} disabled=${busy} onClick=${() => { if (!confirmRm) { setConfirmRm(true); return; } run(() => removeFromShelf(item.id), () => { toast('Removed from your shelves'); history.back(); }); }}>
         <${Icon} name="dnf" /> ${confirmRm ? 'Tap again to remove' : 'Remove from my shelves'}
       </button>
     </div>`}
@@ -609,6 +616,7 @@ export function Genie() {
       }
     } catch (e) {
       console.warn('[advisor] recommend error:', e && e.message);
+      setRecs([]); // the details card lives in the recs branch — without this it never renders
       setDiag({ reason: 'error', raw: e && (e.message || String(e)) });
       toast('Advisor hit an error — details below');
     }
@@ -711,7 +719,7 @@ export function Genie() {
         go('/choose');
       }}><${Icon} name="books" /> Can’t decide? Talk these through with your advisor</button>` : ''}
       ${shown.length === 0 ? html`<div class="card">
-        <p class="muted" style="margin:0;font-size:13.5px">${recs.length ? 'Everything that came back is already on your shelves.' : 'Your advisor didn’t surface fresh picks this round.'} Try a different mood, or tap <b>Help me choose</b> above.</p>
+        <p class="muted" style="margin:0;font-size:13.5px">${recs.length ? 'Everything that came back is already on your shelves.' : (diag && diag.reason === 'error' ? 'Your advisor hit a snag on that one.' : 'Your advisor didn’t surface fresh picks this round.')} ${diag && diag.reason === 'error' ? 'Give it another go in a moment.' : html`Try a different mood, or tap <b>Help me choose</b> above.`}</p>
         ${diag && (diag.raw || diag.reason) && html`<details style="margin-top:10px">
           <summary class="dim" style="font-size:12px;cursor:pointer">What happened? (tap, then share with Claude)</summary>
           <pre style="white-space:pre-wrap;word-break:break-word;font-size:11px;color:var(--text-3);background:var(--bg-2);border-radius:10px;padding:10px;margin:8px 0 0;max-height:220px;overflow:auto">${'reason: ' + (diag.reason || '—') + '\n\n' + (diag.raw ? String(diag.raw).slice(0, 1400) : '(no raw output)')}</pre>
