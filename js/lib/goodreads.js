@@ -51,6 +51,7 @@ export function parseGoodreads(text) {
   const iRating = col('My Rating');
   const iShelf = col('Exclusive Shelf');
   const iIsbn = col('ISBN13') >= 0 ? col('ISBN13') : col('ISBN');
+  const iDateRead = col('Date Read'); // preserves finish dates (Kindle import + Goodreads)
   if (iTitle < 0) return []; // not a Goodreads export
 
   const out = [];
@@ -59,12 +60,15 @@ export function parseGoodreads(text) {
     const title = (row[iTitle] || '').trim();
     if (!title) continue;
     const rating = iRating >= 0 ? parseInt(row[iRating], 10) : 0;
+    const dateRaw = iDateRead >= 0 ? (row[iDateRead] || '').trim() : '';
+    const d = dateRaw && !isNaN(Date.parse(dateRaw)) ? new Date(dateRaw).toISOString().slice(0, 10) : null;
     out.push({
       title,
       author: (iAuthor >= 0 ? row[iAuthor] : '').trim(),
       status: toStatus(iShelf >= 0 ? row[iShelf] : ''),
       rating: rating > 0 ? rating : null,
       isbn: iIsbn >= 0 ? cleanIsbn(row[iIsbn]) : null,
+      dateRead: d,
     });
   }
   return out;

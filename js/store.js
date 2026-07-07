@@ -353,6 +353,8 @@ export async function importShelf(rows, onProgress) {
       const bookId = await findOrCreateBook({ title: r.title, author: r.author || '', tags: [] });
       const patch = { user_id: user.id, book_id: bookId, status: r.status || 'to_read', is_public: true };
       if (r.rating) patch.rating = r.rating;
+      if (r.dateRead && (r.status === 'finished' || r.status === 'dnf')) patch.finished_at = r.dateRead; // preserve read date → shelf ordering
+
       const { error } = await supabase.from('shelf_items').upsert(patch, { onConflict: 'user_id,book_id' });
       if (error) throw error;
       added++;
