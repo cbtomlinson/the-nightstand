@@ -455,10 +455,15 @@ export async function mergeShelfItems(keep, drop) {
 
 // Re-fetch a book's cover + description using its (now corrected) author.
 // Covers and blurbs fetched while the author was blank can belong to a
-// same-titled different book — this overwrites both with the right match.
+// same-titled different book. Outcomes:
+//   'updated'   — found better data and wrote it
+//   'confirmed' — the sources returned the cover we already show
+//   'cleared'   — nothing online for this book (too new?) — dropped the
+//                 mismatched cover/blurb so the default cover shows instead
+//   'none'      — nothing online and nothing stored to clear
 export async function refreshBookDetails(bookId) {
   const b = getState().booksById[bookId];
-  if (!b || !b.title) return false;
+  if (!b || !b.title) return 'none';
   let coverUrl = null, desc = null;
   try { coverUrl = await coverFor(b.title, b.author || ''); } catch (_e) {}
   try {
@@ -469,18 +474,34 @@ export async function refreshBookDetails(bookId) {
       if (!desc) desc = await advisorDescribe({ title: b.title, author: b.author || '' });
     }
   } catch (_e) {}
+
   const patch = {};
-  if (coverUrl && coverUrl !== b.coverUrl) patch.cover_url = coverUrl;
-  if (desc && desc !== b.description) {
+  let outcome;
+  if (coverUrl && coverUrl !== b.coverUrl) { patch.cover_url = coverUrl; outcome = 'updated'; }
+  else if (coverUrl) outcome = 'confirmed';
+  else if (b.coverUrl) { patch.cover_url = null; outcome = 'cleared'; }
+  else outcome = 'none';
+
+  const newDesc = (desc && desc !== b.description) ? desc : null;
+  const clearDesc = !desc && outcome === 'cleared' && !!b.description; // cover was wrong, no fresh blurb → old blurb is suspect too
+  if (newDesc || clearDesc) {
     const { data: bk } = await supabase.from('books').select('meta').eq('id', bookId).maybeSingle();
-    patch.meta = { ...((bk && bk.meta) || {}), description: desc };
+    const meta = { ...((bk && bk.meta) || {}) };
+    if (newDesc) meta.description = newDesc; else delete meta.description;
+    patch.meta = meta;
+    if (newDesc && outcome !== 'cleared') outcome = 'updated';
   }
-  if (!Object.keys(patch).length) return false;
+
+  if (!Object.keys(patch).length) return outcome;
   const { error } = await supabase.from('books').update(patch).eq('id', bookId);
   if (error) { console.error('[store] refreshBookDetails:', error.message); throw error; }
   const now = getState().booksById[bookId];
-  if (now) set({ booksById: { ...getState().booksById, [bookId]: { ...now, coverUrl: coverUrl || now.coverUrl, description: desc || now.description } } });
-  return true;
+  if (now) set({ booksById: { ...getState().booksById, [bookId]: {
+    ...now,
+    coverUrl: ('cover_url' in patch) ? patch.cover_url : now.coverUrl,
+    description: newDesc || (clearDesc ? null : now.description),
+  } } });
+  return outcome;
 }
 
 // Remove a book from the shelves entirely (no status change, just gone).

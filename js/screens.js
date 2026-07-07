@@ -554,8 +554,14 @@ export function BookDetail({ id }) {
       <button class="btn btn-ghost btn-block mt-12" disabled=${busy} onClick=${async () => {
         if (busy) return;
         setBusy(true);
-        try { const changed = await refreshBookDetails(id); toast(changed ? 'Cover and blurb refreshed ✨' : 'No better match found'); }
-        catch (_e) { toast('Could not refresh — try again'); }
+        try {
+          const outcome = await refreshBookDetails(id);
+          setEnrich(null); // don't let a stale enrich fallback keep showing the old cover
+          toast(outcome === 'updated' ? 'Cover and blurb refreshed ✨'
+            : outcome === 'confirmed' ? 'Checked the book databases — this is the right cover'
+            : outcome === 'cleared' ? 'Nothing online for this book yet — cleared the mismatched details'
+            : 'Nothing found online for this one yet');
+        } catch (_e) { toast('Could not refresh — try again'); }
         setBusy(false);
       }}><${Icon} name="refresh" /> Wrong cover or blurb? Refresh details</button>
       <button class="btn btn-ghost btn-block mt-8" style=${'color:var(--danger)' + (confirmRm ? ';border-color:var(--danger)' : '')} disabled=${busy} onClick=${() => { if (!confirmRm) { setConfirmRm(true); return; } run(() => removeFromShelf(item.id), () => { toast('Removed from your shelves'); history.back(); }); }}>
@@ -1819,7 +1825,7 @@ function SearchResult({ b }) {
         const bk = st.booksById[i.bookId];
         return bk && sameBook(bk, b);
       });
-      if (item) return { status: s, bookId: item.bookId };
+      if (item) return { status: s, bookId: item.bookId, itemId: item.id };
     }
     return null;
   })();
@@ -1843,11 +1849,18 @@ function SearchResult({ b }) {
     if (busy) return;
     setBusy(true);
     try {
-      await addToShelf({ title: b.title, author: b.author, coverUrl: (enrich && enrich.coverUrl) || b.coverUrl, tags: b.tags }, status);
-      setAdded(statusMove[status]);
-      setAddedStatus(status);
-      toast('Added to ' + statusMove[status]);
-    } catch (e) { toast('Could not add'); }
+      if (shelfStatus === status) {
+        // Tapping the shelf it's already on = undo the add.
+        if (existing && existing.itemId) await removeFromShelf(existing.itemId);
+        setAdded(null); setAddedStatus(null);
+        toast('Took it back off your shelf');
+      } else {
+        await addToShelf({ title: b.title, author: b.author, coverUrl: (enrich && enrich.coverUrl) || b.coverUrl, tags: b.tags }, status);
+        setAdded(statusMove[status]);
+        setAddedStatus(status);
+        toast('Added to ' + statusMove[status]);
+      }
+    } catch (e) { toast('Could not save — try again'); }
     setBusy(false);
   };
 
@@ -1878,7 +1891,8 @@ function SearchResult({ b }) {
         ${[['to_read', 'TBR'], ['reading', 'Reading'], ['finished', 'Finished'], ['dnf', 'DNF']].map(([s, label]) =>
           html`<button class="tag" disabled=${busy} style=${shelfStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${shelfStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
       </div>
-      ${shelfStatus ? html`<button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/shelf/' + shelfStatus)}><${Icon} name="books" /> Go to your shelf</button>` : ''}
+      ${shelfStatus ? html`<p class="dim" style="font-size:11.5px;margin:8px 0 0">Tapped by accident? Tap the checked shelf again to remove it.</p>
+      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/shelf/' + shelfStatus)}><${Icon} name="books" /> Go to your shelf</button>` : ''}
       <div class="tagrow mt-8">
         <button class="tag" onClick=${() => shareBook({ title: b.title, author: b.author, coverUrl: cover })}><${Icon} name="send" /> Share</button>
         <a class="tag" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>
