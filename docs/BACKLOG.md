@@ -83,15 +83,14 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   invite -> set-password -> onboarding. Magic links removed.
 - ✅ Fixed the intermittent **"opening the library" hang** (serialized auth-token refresh; no
   Web Locks) + a 6s splash safety net with a Reload button.
-- ⏳ **Re-enable the service worker** for a *true* installable/offline PWA. Current state:
-  the SW is **completely off** — nothing calls `navigator.serviceWorker.register()`, and
-  `index.html` actively **unregisters any SW + clears all caches on every load** (leftover
-  "dev mode" code). To turn it on, when ready: (1) register the SW, (2) remove the unregister/
-  cache-clear block in `index.html`, (3) adopt **cache-bump discipline** — bump `CACHE` in
-  `service-worker.js` on every JS/CSS change so installed clients pull fresh code. **Deliberately
-  deferred past Beta** — keeping it off means everyone always gets the latest on reload. NOTE:
-  this is also the fix for the **"stale cache / still seeing old code until a hard reload"** trap
-  we keep hitting during testing. _(Chelsea asked to park this — 2026-06-27.)_
+- ✅ **Service worker re-enabled — network-first** _(shipped 2026-07-06)._ Rewrote
+  `service-worker.js` (`nightstand-v9`): every same-origin request goes to the network with
+  `cache:'no-cache'` (ETag revalidation bypasses the 10-min GitHub Pages HTTP cache), with a
+  3.5s timeout falling back to the cached copy — so deploys show up on the **next launch**, no
+  hard refresh, and the app still opens offline. Cross-origin (Supabase, covers) is never
+  intercepted; registration is post-`load` with `updateViaCache:'none'`. **No cache-bump
+  discipline needed** — content flows network-first; bump `CACHE` only on strategy changes.
+  This closes the recurring **"stale cache / old code for 10 minutes"** trap.
 
 ## Enhancements (discussed, not built — 2026-06-28)
 - ✅ **"Where to find it" deep links** _(shipped 2026-06-29 — Option 1, the check row)._ Chips stay

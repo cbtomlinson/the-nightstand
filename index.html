@@ -52,13 +52,14 @@
   <script src="assets/vendor/supabase.umd.js"></script>
   <script type="module" src="js/app.js"></script>
   <script>
-    // Dev mode: no service worker, so the app always loads fresh while we build.
-    // Also removes any previously-registered worker + caches (re-enabled for offline/install at deploy time).
+    // Network-first service worker: fresh code on every launch (no 10-minute
+    // GitHub Pages cache lag), cached fallback when offline. Registered after
+    // load so it can never slow boot; updateViaCache:'none' keeps the worker
+    // itself from being cached stale.
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
-    }
-    if (window.caches && caches.keys) {
-      caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js', { updateViaCache: 'none' }).catch(function () {});
+      });
     }
   </script>
 </body>

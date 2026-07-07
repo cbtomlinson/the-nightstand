@@ -1,7 +1,24 @@
-// Reading Genie — service worker (offline app shell)
-// Bump CACHE when shipping new assets so clients pick up the update.
-const CACHE = 'reading-genie-v8';
+// The Nightstand — service worker
+//
+// Strategy: NETWORK-FIRST for everything on our own origin.
+//   - Every load asks the server for fresh files, bypassing the browser's
+//     10-minute GitHub Pages HTTP cache (cache:'no-cache' → ETag revalidation,
+//     so unchanged files come back as cheap 304s). Deploys show up on the
+//     very next launch instead of "wait ten minutes and hard-refresh".
+//   - The cache is the FALLBACK: if the network is slow (>3.5s) or down, we
+//     serve the last good copy, so the app still opens offline. The network
+//     can never hang boot — the race guarantees an answer.
+//   - Cross-origin requests (Supabase, Open Library, cover images) are not
+//     intercepted at all. The worker must never sit between the app and its
+//     data.
+//
+// Bump CACHE on strategy changes only — content updates flow through
+// automatically because we're network-first.
+const CACHE = 'nightstand-v9';
+const NETWORK_TIMEOUT_MS = 3500;
 
+// Best-effort warm-up of the shell (individually, so one miss can't fail the
+// install). Runtime caching keeps all of this fresh afterward anyway.
 const CORE = [
   './',
   './index.html',
@@ -17,16 +34,25 @@ const CORE = [
   './js/ui.js',
   './js/screens.js',
   './js/app.js',
+  './js/advisor.js',
+  './js/admin.js',
+  './js/lib/openlibrary.js',
+  './js/lib/goodreads.js',
+  './js/lib/storygraph.js',
   './assets/vendor/preact.module.js',
   './assets/vendor/hooks.module.js',
   './assets/vendor/htm.module.js',
+  './assets/vendor/supabase.umd.js',
   './assets/icons/icon.svg',
   './assets/icons/icon-maskable.svg',
+  './data/kindle-authors.json',
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(CORE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((cache) => Promise.all(CORE.map((u) => cache.add(u).catch(() => {}))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -38,37 +64,30 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Network-first with cached fallback. `key` is what we store/look up under —
+// navigations all map to ./index.html (hash routes never reach the server).
+function networkFirst(req, key) {
+  return caches.open(CACHE).then((cache) => {
+    const network = fetch(req, { cache: 'no-cache' }).then((res) => {
+      if (res && res.ok) cache.put(key, res.clone()).catch(() => {});
+      return res;
+    });
+    const timer = new Promise((resolve) => setTimeout(resolve, NETWORK_TIMEOUT_MS));
+    return Promise.race([network, timer])
+      .then((res) => res || cache.match(key).then((cached) => cached || network))
+      .catch(() => cache.match(key).then((cached) => {
+        if (cached) return cached;
+        throw new Error('offline and not cached');
+      }));
+  });
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return; // Supabase & friends: hands off
 
-  // SPA navigations: serve the app shell, fall back to cache when offline.
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).catch(() => caches.match('./index.html'))
-    );
-    return;
-  }
-
-  // Same-origin assets: cache-first, then update the cache in the background.
-  if (url.origin === self.location.origin) {
-    event.respondWith(
-      caches.match(req).then((cached) => {
-        const network = fetch(req).then((res) => {
-          if (res && res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((cache) => cache.put(req, copy));
-          }
-          return res;
-        }).catch(() => cached);
-        return cached || network;
-      })
-    );
-    return;
-  }
-
-  // Cross-origin (e.g. book covers later): network, fall back to cache if present.
-  event.respondWith(fetch(req).catch(() => caches.match(req)));
+  const key = req.mode === 'navigate' ? './index.html' : req;
+  event.respondWith(networkFirst(req, key));
 });
