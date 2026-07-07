@@ -199,8 +199,56 @@ async function refresh(userId, profile) {
   };
 
   set({ ready: true, error: null, me, profile: prof, booksById, shelves, stats });
+  backfillAuthors(booksById);      // fire-and-forget: fill blank authors (Kindle import has none)
   backfillCovers(booksById);       // fire-and-forget: fill any missing covers
   backfillDescriptions(booksById); // fire-and-forget: cache descriptions so books open instantly
+}
+
+// Background author backfill: Kindle exports carry no author names, so imported
+// books arrive with author ''. Look each one up on Open Library by title and,
+// when the top results' title genuinely matches ours, persist the author. Same
+// fire-and-forget pattern as covers; a session Set stops retrying misses.
+const titleKey = (s) => (s || '')
+  .toLowerCase().split(':')[0]
+  .replace(/\([^)]*\)/g, ' ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .replace(/^(the|a|an)\s+/, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+let backfillingAuthors = false;
+const authorTried = new Set();
+async function backfillAuthors(booksById) {
+  if (backfillingAuthors) return;
+  const missing = Object.values(booksById).filter((b) => b && b.title && !(b.author || '').trim() && !authorTried.has(b.id));
+  if (!missing.length) return;
+  backfillingAuthors = true;
+  try {
+    for (let i = 0; i < missing.length; i += 4) {
+      await Promise.all(missing.slice(i, i + 4).map(async (b) => {
+        authorTried.add(b.id);
+        try {
+          const key = titleKey(b.title);
+          const results = await searchBooks(b.title);
+          const hit = (results || []).find((r) => {
+            if (!r.author) return false;
+            const k = titleKey(r.title);
+            return k === key || k.startsWith(key + ' ') || key.startsWith(k + ' ');
+          });
+          if (hit) await persistAuthor(b.id, hit.author);
+        } catch (_e) {}
+      }));
+    }
+  } finally { backfillingAuthors = false; }
+}
+
+export async function persistAuthor(bookId, author) {
+  const a = (author || '').trim();
+  if (!bookId || !a) return;
+  const cur = getState().booksById[bookId];
+  if (cur && (cur.author || '').trim()) return; // never overwrite a real author
+  try { await supabase.from('books').update({ author: a }).eq('id', bookId); } catch (_e) { return; }
+  const now = getState().booksById[bookId];
+  if (now) set({ booksById: { ...getState().booksById, [bookId]: { ...now, author: a } } });
 }
 
 // Background description pre-fetch: quietly cache a description for every shelved
@@ -363,6 +411,27 @@ export async function importShelf(rows, onProgress) {
   }
   await refresh(user.id, await fetchProfile(user.id));
   return { added, failed };
+}
+
+// Merge a duplicate shelf entry into the copy being kept: copy anything the
+// kept item is missing (rating, read date, notes) off the duplicate, then
+// delete the duplicate. Used by the Tidy screen so deduping never loses data.
+export async function mergeShelfItems(keep, drop) {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user || !keep || !drop) return;
+  const patch = {};
+  if (!keep.rating && drop.rating) patch.rating = drop.rating;
+  if ((keep.status === 'finished' || keep.status === 'dnf') && !keep.finishedAt && drop.finishedAt) patch.finished_at = drop.finishedAt;
+  if (!keep.note && drop.note) patch.note = drop.note;
+  if (!keep.addedNote && drop.addedNote) patch.added_note = drop.addedNote;
+  if (Object.keys(patch).length) {
+    const { error } = await supabase.from('shelf_items').update(patch).eq('id', keep.id);
+    if (error) { console.error('[store] mergeShelfItems:', error.message); throw error; }
+  }
+  removeLocalShelfItem(drop.id); // instant
+  const { error: delErr } = await supabase.from('shelf_items').delete().eq('id', drop.id);
+  if (delErr) { console.error('[store] mergeShelfItems:', delErr.message); throw delErr; }
+  await refresh(user.id, await fetchProfile(user.id));
 }
 
 // Remove a book from the shelves entirely (no status change, just gone).

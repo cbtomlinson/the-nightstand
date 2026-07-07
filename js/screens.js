@@ -5,7 +5,7 @@ import * as D from './data.js';
 import { Icon, Avatar, BookCover, Stars, StarRating, Pill, Progress, ConfBar, toast, shareBook } from './ui.js';
 import { getBrand } from './brand.js';
 import { signInWithPassword, resetPassword, setPassword, joinWaitlist, signOut } from './auth.js';
-import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection, getRooms, createRoom, getRoom, postToRoom, addRoomMember, leaveRoom, startBuddyRead, myBuddyReads, getBuddyRead, postBuddyMessage, joinBuddyRead } from './store.js';
+import { useStore, addToShelf, setStatus, updateShelfItem, persistCover, importShelf, neverRecommend, snoozeBook, setRatingAndNudge, removeFromShelf, mergeShelfItems, setMyMood, saveProfileBasics, completeOnboarding, listMembers, getCircle, recommendToFriends, getCircleRecs, respondToRec, reloadShelves, persistDescription, getPendingRecCount, getFeed, toggleReaction, getReflection, saveReflection, getRooms, createRoom, getRoom, postToRoom, addRoomMember, leaveRoom, startBuddyRead, myBuddyReads, getBuddyRead, postBuddyMessage, joinBuddyRead } from './store.js';
 import { advisorReady, advisorChat, advisorRecommend, advisorEnrich, advisorDescribe } from './advisor.js';
 import { searchBooks } from './lib/openlibrary.js';
 import { parseGoodreads } from './lib/goodreads.js';
@@ -339,13 +339,30 @@ export function Tidy() {
     setBusy(null);
   };
 
+  // Keep this copy: fold the other copies' rating/read date/notes into it,
+  // then delete them — deduping without losing anything.
+  const keepCopy = async (keeper, group) => {
+    setBusy(keeper.item.id);
+    try {
+      for (const other of group) {
+        if (other.item.id === keeper.item.id) continue;
+        await mergeShelfItems(keeper.item, other.item);
+      }
+      toast('Merged — kept the best of both');
+    } catch { toast('Could not merge — try again'); }
+    setBusy(null);
+  };
+
   const pillCls = { reading: 'pill-teal', to_read: 'pill-lilac', finished: 'pill-gold', dnf: 'pill-rose' };
   const label = { reading: 'Reading', to_read: 'TBR', finished: 'Finished', dnf: 'DNF' };
   const detail = ({ item, shelf }) => {
-    if (shelf === 'finished') return item.finishedAt ? 'Read ' + prettyDay(item.finishedAt) : 'Finished';
-    if (shelf === 'reading') return (item.progress ? item.progress + '% in' : 'In progress');
-    if (shelf === 'dnf') return 'Set aside' + (item.atPct ? ' at ' + item.atPct + '%' : '');
-    return 'On your TBR';
+    let s;
+    if (shelf === 'finished') s = item.finishedAt ? 'Read ' + prettyDay(item.finishedAt) : 'Finished';
+    else if (shelf === 'reading') s = (item.progress ? item.progress + '% in' : 'In progress');
+    else if (shelf === 'dnf') s = 'Set aside' + (item.atPct ? ' at ' + item.atPct + '%' : '');
+    else s = 'On your TBR';
+    if (item.rating) s += ' · ' + '★'.repeat(item.rating);
+    return s;
   };
 
   return html`<div class="screen">
@@ -355,7 +372,7 @@ export function Tidy() {
 
     ${dupes.length === 0
       ? html`<div class="empty mt-20"><${Icon} name="check" /><div>No duplicates — your shelves are tidy. ✨</div></div>`
-      : html`<p class="dim" style="font-size:12.5px;margin:8px 0 4px">${dupes.length} possible duplicate${dupes.length === 1 ? '' : 's'}. Removing just unshelves that copy — the one you keep stays exactly as it is.</p>
+      : html`<p class="dim" style="font-size:12.5px;margin:8px 0 4px">${dupes.length} possible duplicate${dupes.length === 1 ? '' : 's'}. <b>Keep</b> merges the copies — your rating, read date, and notes all end up on the one you keep.</p>
         ${dupes.map((g) => html`<div class="card mt-12">
           ${g.map(({ item, b, shelf }) => html`<div class="book-row" style="cursor:default">
             <div onClick=${() => go('/book/' + b.id)} role="button" style="display:flex;gap:12px;flex:1;min-width:0;cursor:pointer">
@@ -366,7 +383,10 @@ export function Tidy() {
                 <div class="mt-8"><span class=${'pill ' + pillCls[shelf]}>${label[shelf]}</span> <span class="dim" style="font-size:12px">· ${detail({ item, shelf })}</span></div>
               </div>
             </div>
-            <button class="btn btn-ghost" style="padding:7px 12px;font-size:13px;color:var(--danger);flex:none" disabled=${busy === item.id} onClick=${() => remove(item.id)}>${busy === item.id ? '…' : 'Remove'}</button>
+            <div style="display:flex;flex-direction:column;gap:6px;flex:none">
+              <button class="btn" style="padding:7px 12px;font-size:13px;color:var(--gold-2)" disabled=${!!busy} onClick=${() => keepCopy({ item, b, shelf }, g)}>${busy === item.id ? '…' : 'Keep'}</button>
+              <button class="btn btn-ghost" style="padding:7px 12px;font-size:13px;color:var(--danger)" disabled=${!!busy} onClick=${() => remove(item.id)}>Remove</button>
+            </div>
           </div>`)}
         </div>`)}`}
   </div>`;
