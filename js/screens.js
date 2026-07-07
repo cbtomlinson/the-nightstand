@@ -303,6 +303,24 @@ function normTitle(s) {
     .trim();
 }
 
+// Collapse an author string to "lastname firstinitial" ("Emma Brodie" and
+// "Brodie, Emma" → "brodie e") so we can tell whether two same-titled books
+// are plausibly the same book. Empty → '' (unknown, can't disqualify).
+function authorKey(s) {
+  s = (s || '').split('&')[0].trim();                     // first author only
+  const parts = s.split(',');
+  if (parts.length === 2) s = parts[1] + ' ' + parts[0];  // "Brodie, Emma" → "Emma Brodie"
+  s = s.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const w = s.replace(/[^a-z ]+/g, ' ').trim().split(/\s+/).filter(Boolean);
+  return w.length ? w[w.length - 1] + ' ' + w[0][0] : '';
+}
+// Same title + compatible author (unknown author on either side counts as compatible).
+function sameBook(a, b) {
+  if ((a.title || '').toLowerCase() !== (b.title || '').toLowerCase()) return false;
+  const ka = authorKey(a.author), kb = authorKey(b.author);
+  return !ka || !kb || ka === kb;
+}
+
 // "2026-06-09" → "Jun 9, 2026" without the UTC-parse day-shift.
 function prettyDay(s) {
   if (!s) return '';
@@ -624,10 +642,10 @@ export function Genie() {
   };
 
   const list = (recs || []).map((r) => ({ ...r, book: { title: r.title, author: r.author, cover: '#4a2f5a', coverUrl: r.coverUrl || null, tags: [] }, bookId: null }));
-  const shelfTitles = new Set(Object.values(st.booksById || {}).map((b) => (b.title || '').toLowerCase()));
+  const shelfBooks = Object.values(st.booksById || {});
   const neverTitles = new Set(((st.profile && st.profile.never) || []).map((n) => (n.title || '').toLowerCase()));
   const shown = list.filter((r) => r.book && !dismissed.includes(r.book.title)
-    && !shelfTitles.has((r.book.title || '').toLowerCase())
+    && !shelfBooks.some((bk) => sameBook(bk, r.book)) // author-aware: same title ≠ same book
     && !neverTitles.has((r.book.title || '').toLowerCase()));
 
   // Moods are multi-select: each chip toggles its term in the comma-separated mood.
@@ -1791,14 +1809,15 @@ function SearchResult({ b }) {
   const [addedStatus, setAddedStatus] = useState(null); // which shelf key (for the active button)
   const [busy, setBusy] = useState(false);
 
-  // Is this result already on one of their shelves? (match by title)
+  // Is this result already on one of their shelves? Title alone isn't enough —
+  // plenty of unrelated books share a title ("Into the Blue"), so the author
+  // must be compatible too (unknown authors can't disqualify).
   const existing = (() => {
     if (!st.ready) return null;
-    const t = (b.title || '').toLowerCase();
     for (const s of ['reading', 'to_read', 'finished', 'dnf']) {
       const item = (st.shelves[s] || []).find((i) => {
         const bk = st.booksById[i.bookId];
-        return bk && (bk.title || '').toLowerCase() === t;
+        return bk && sameBook(bk, b);
       });
       if (item) return { status: s, bookId: item.bookId };
     }
