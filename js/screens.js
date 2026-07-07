@@ -411,6 +411,67 @@ export function Tidy() {
   </div>`;
 }
 
+/* ---------------- Rate your reads (flip through unrated finished books) ---------------- */
+export function RateDeck() {
+  const st = useStore();
+  const [skipped, setSkipped] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [doneCount, setDoneCount] = useState(0);
+  const [last, setLast] = useState(null); // { itemId, title } — one-tap undo for a mis-tap
+
+  if (!st.ready) return html`<div class="screen"><div class="empty mt-20"><${Icon} name="star" /><div>Opening your shelves…</div></div></div>`;
+
+  // Freshest memories first — recent finishes are the easiest to rate.
+  const queue = (st.shelves.finished || [])
+    .filter((i) => !i.rating && !skipped.includes(i.id))
+    .map((i) => ({ i, b: st.booksById[i.bookId] }))
+    .filter((x) => x.b)
+    .sort((a, z) => String(z.i.finishedAt || z.i.updatedAt || '').localeCompare(String(a.i.finishedAt || a.i.updatedAt || '')));
+  const cur = queue[0] || null;
+
+  const rate = async (n) => {
+    if (!cur || busy) return;
+    setBusy(true);
+    try {
+      await setRatingAndNudge(cur.i.id, cur.b, n);
+      setLast({ itemId: cur.i.id, title: cur.b.title });
+      setDoneCount((c) => c + 1);
+      toast(n === 5 ? '★★★★★ — noted what you love' : n === 1 ? '★ — noted what to avoid' : 'Rated ' + n + ' stars');
+    } catch (_e) { toast('Could not save — try again'); }
+    setBusy(false);
+  };
+  const undo = async () => {
+    if (!last || busy) return;
+    setBusy(true);
+    try { await updateShelfItem(last.itemId, { rating: null }); setDoneCount((c) => Math.max(0, c - 1)); setLast(null); toast('Rating removed'); }
+    catch (_e) { toast('Could not undo — try again'); }
+    setBusy(false);
+  };
+
+  const desc = cur && cur.b.description ? (cur.b.description.length > 150 ? cur.b.description.slice(0, 150) + '…' : cur.b.description) : null;
+
+  return html`<div class="screen">
+    <button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>
+    <div class="screen-title">Rate your reads</div>
+    <div class="screen-sub">${cur ? queue.length + ' book' + (queue.length === 1 ? '' : 's') + ' waiting — tap the stars, or skip any you don’t remember.' : 'Every finished book has its stars.'}</div>
+
+    ${cur ? html`<div class="card" style="text-align:center;padding:22px 16px">
+      <div style="display:flex;justify-content:center"><${BookCover} book=${cur.b} size="lg" /></div>
+      <div style="font-family:var(--serif);font-size:20px;line-height:1.25;margin-top:14px">${cur.b.title}</div>
+      <div class="muted" style="font-size:13.5px;margin-top:2px">${cur.b.author || ''}</div>
+      ${cur.i.finishedAt ? html`<div class="dim" style="font-size:12px;margin-top:4px">Finished ${prettyDay(cur.i.finishedAt)}</div>` : ''}
+      ${desc ? html`<p class="dim" style="font-size:12.5px;line-height:1.5;margin:10px auto 0;max-width:400px">${desc}</p>` : ''}
+      <div style="display:flex;justify-content:center;margin-top:14px"><${StarRating} value=${0} size=${34} onRate=${rate} /></div>
+      <button class="btn btn-ghost btn-block mt-12" disabled=${busy} onClick=${() => setSkipped((s) => [...s, cur.i.id])}>Skip — don’t remember this one</button>
+    </div>`
+    : html`<div class="empty mt-20"><${Icon} name="sparkles" /><div>${doneCount ? 'Beautifully done — ' + doneCount + ' rated this sitting. ✨' : 'Nothing left to rate. ✨'}</div></div>`}
+
+    ${last ? html`<button class="btn btn-ghost btn-block mt-12" style="color:var(--text-3)" disabled=${busy} onClick=${undo}>↩ Undo — “${last.title}”</button>` : ''}
+    ${doneCount > 0 && cur ? html`<p class="dim" style="text-align:center;font-size:12px;margin-top:10px">${doneCount} rated this sitting</p>` : ''}
+    ${!cur ? html`<button class="btn btn-block mt-12" onClick=${() => go('/profile')}><${Icon} name="user" /> Back to profile</button>` : ''}
+  </div>`;
+}
+
 /* ---------------- Rated books (from Profile stats) ---------------- */
 export function RatedList({ min }) {
   const st = useStore();
@@ -1316,6 +1377,7 @@ export function Profile() {
   const me = st.me;
   const p = st.profile || {};
   const stats = st.stats;
+  const unrated = (st.shelves.finished || []).filter((i) => !i.rating).length;
   const iconFor = { love: 'heart', hate: 'dnf', note: 'bulb' };
   return html`<div class="screen">
     <div class="row" style="gap:14px">
@@ -1372,7 +1434,8 @@ export function Profile() {
       <div class="muted" style="font-size:13.5px;text-align:center;line-height:1.5">Your reading profile fills in as you rate books and talk with the advisor. Rate a few finished books — especially the 5★ and 1★ ones — and it’ll start to take shape.</div>
     </div>` : ''}
 
-    <button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads / StoryGraph</button>
+    ${unrated > 0 ? html`<button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/rate')}><${Icon} name="star" /> Rate your reads · ${unrated} waiting</button>` : ''}
+    <button class=${'btn btn-ghost btn-block ' + (unrated > 0 ? 'mt-12' : 'mt-20')} onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads / StoryGraph</button>
     <button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/tidy')}><${Icon} name="books" /> Find duplicate books</button>
     ${me.isOwner ? html`<button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/admin')}><${Icon} name="users" /> Admin console</button>` : ''}
 

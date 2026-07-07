@@ -48,6 +48,7 @@ function route(hash) {
     case 'import':     return { screen: html`<${S.Import} />`, nav: 'profile' };
     case 'tidy':       return { screen: html`<${S.Tidy} />`, nav: 'profile' };
     case 'rated':      return { screen: html`<${S.RatedList} min=${seg[1]} />`, nav: 'profile' };
+    case 'rate':       return { screen: html`<${S.RateDeck} />`, nav: 'profile' };
     case 'admin':      return { screen: html`<${S.Admin} />`, nav: 'profile' };
     case 'shelf':      return { screen: html`<${S.Shelf} tab=${seg[1]} />`, nav: 'shelf' };
     default:           return { screen: html`<${S.Shelf} />`, nav: 'shelf' };
