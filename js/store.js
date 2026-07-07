@@ -217,17 +217,35 @@ const titleKey = (s) => (s || '')
   .trim();
 let backfillingAuthors = false;
 const authorTried = new Set();
+// Ground truth from Chelsea's Amazon export (data/kindle-authors.json): exact
+// title → author for every book in the Kindle library, ASIN-accurate — so
+// same-titled books by different authors resolve correctly. Checked before
+// the Open Library guess. undefined = not loaded yet, null = unavailable.
+let authorMap;
+async function loadAuthorMap() {
+  if (authorMap !== undefined) return authorMap;
+  try {
+    const res = await fetch('data/kindle-authors.json');
+    authorMap = res.ok ? await res.json() : null;
+  } catch (_e) { authorMap = null; }
+  return authorMap;
+}
 async function backfillAuthors(booksById) {
   if (backfillingAuthors) return;
   const missing = Object.values(booksById).filter((b) => b && b.title && !(b.author || '').trim() && !authorTried.has(b.id));
   if (!missing.length) return;
   backfillingAuthors = true;
   try {
+    const map = await loadAuthorMap();
     for (let i = 0; i < missing.length; i += 4) {
       await Promise.all(missing.slice(i, i + 4).map(async (b) => {
         authorTried.add(b.id);
         try {
           const key = titleKey(b.title);
+          // 1) Amazon record: full title first (splits e.g. the two "Housemaid"s), then normalized key.
+          const known = map && (((map.byTitle || {})[b.title.trim().toLowerCase()]) || ((map.byKey || {})[key]));
+          if (known) { await persistAuthor(b.id, known); return; }
+          // 2) Open Library guess, guarded by a real title match.
           const results = await searchBooks(b.title);
           const hit = (results || []).find((r) => {
             if (!r.author) return false;
