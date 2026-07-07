@@ -150,6 +150,7 @@ async function refresh(userId, profile) {
         tags: (b.meta && b.meta.tags) || [],
         pages: (b.meta && b.meta.pages) || null,
         description: (b.meta && b.meta.description) || null,
+        descMissing: !!(b.meta && b.meta.desc_missing), // Claude confirmed it doesn't know this book — stop asking
       };
     }
     const item = {
@@ -281,10 +282,10 @@ let backfillingDesc = false;
 const descTried = new Set();
 async function backfillDescriptions(booksById) {
   if (backfillingDesc || !advisorReady()) return;
-  const missing = Object.values(booksById).filter((b) => b && b.title && !b.description && !descTried.has(b.id));
+  const missing = Object.values(booksById).filter((b) => b && b.title && !b.description && !b.descMissing && !descTried.has(b.id));
   if (!missing.length) return;
   backfillingDesc = true;
-  let genBudget = 8;
+  let genBudget = 3; // Claude blurbs per pass — a slow drip, so backfill never crowds out Mabel
   try {
     for (let i = 0; i < missing.length; i += 3) {
       await Promise.all(missing.slice(i, i + 3).map(async (b) => {
@@ -292,12 +293,31 @@ async function backfillDescriptions(booksById) {
           descTried.add(b.id);
           const e = await advisorEnrich({ title: b.title, author: b.author || '' });
           let d = (e && e.description) || null;
-          if (!d && genBudget > 0) { genBudget--; d = await advisorDescribe({ title: b.title, author: b.author || '' }); }
+          if (!d && genBudget > 0) {
+            genBudget--;
+            d = await advisorDescribe({ title: b.title, author: b.author || '' });
+            // Claude answered and doesn't know the book → remember, so we never
+            // spend another call on it. (Errors throw past this — no false marks.)
+            if (!d) await persistDescMiss(b.id);
+          }
           if (d) await persistDescription(b.id, d);
         } catch (_e) {}
       }));
     }
   } finally { backfillingDesc = false; }
+}
+
+// Mark a book as "no description exists online or in Claude's memory" so
+// backfills and book-opens stop retrying it every session. The manual
+// "Refresh details" button ignores + clears this, so it's never a dead end.
+async function persistDescMiss(bookId) {
+  try {
+    const { data: bk } = await supabase.from('books').select('meta').eq('id', bookId).maybeSingle();
+    const meta = { ...((bk && bk.meta) || {}), desc_missing: true };
+    await supabase.from('books').update({ meta }).eq('id', bookId);
+    const now = getState().booksById[bookId];
+    if (now) set({ booksById: { ...getState().booksById, [bookId]: { ...now, descMissing: true } } });
+  } catch (_e) {}
 }
 
 // Saved advisor conversations (mid-read companion + post-read reflections) — one
@@ -487,7 +507,8 @@ export async function refreshBookDetails(bookId) {
   if (newDesc || clearDesc) {
     const { data: bk } = await supabase.from('books').select('meta').eq('id', bookId).maybeSingle();
     const meta = { ...((bk && bk.meta) || {}) };
-    if (newDesc) meta.description = newDesc; else delete meta.description;
+    if (newDesc) { meta.description = newDesc; delete meta.desc_missing; } // found one after all — unmark
+    else delete meta.description;
     patch.meta = meta;
     if (newDesc && outcome !== 'cleared') outcome = 'updated';
   }
@@ -500,6 +521,7 @@ export async function refreshBookDetails(bookId) {
     ...now,
     coverUrl: ('cover_url' in patch) ? patch.cover_url : now.coverUrl,
     description: newDesc || (clearDesc ? null : now.description),
+    descMissing: newDesc ? false : now.descMissing,
   } } });
   return outcome;
 }

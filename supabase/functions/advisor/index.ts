@@ -6,7 +6,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // but pricier; Haiku ('claude-haiku-4-5') is cheapest.
 const MODEL = 'claude-sonnet-4-6';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const RATE_MAX_PER_HOUR = 100; // per-user cap on Claude calls (small private club)
+const RATE_MAX_PER_HOUR = 100;    // per-user cap on INTERACTIVE Claude calls (chat/recommend)
+const RATE_MAX_BG_PER_HOUR = 40;  // separate bucket for background 'describe' blurbs, so a
+                                  // description backfill can never lock Mabel mid-conversation
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -231,12 +233,27 @@ Deno.serve(async (req) => {
       return json({ error: 'archived', reply: 'Your advisor is paused on this account — you can still use all your shelves. Ask Chelsea to switch Mabel back on.' }, 403);
 
     // Rate-limit the Claude-calling modes (fail-soft if the table isn't set up yet).
+    // Two buckets: background 'describe' blurbs vs interactive chat/recommend —
+    // an import's description backfill must never eat Mabel's conversation budget.
     try {
-      await supabase.from('advisor_calls').insert({ user_id: user.id });
+      const isBg = mode === 'describe';
       const since = new Date(Date.now() - 3600_000).toISOString();
-      const { count } = await supabase.from('advisor_calls').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since);
-      if ((count || 0) > RATE_MAX_PER_HOUR)
-        return json({ error: 'rate_limited', reply: "You've reached the hourly limit — let's give it a little breather and pick this up again soon." }, 429);
+      const ins = await supabase.from('advisor_calls').insert({ user_id: user.id, mode });
+      let count = 0;
+      if (ins.error) {
+        // Legacy table without the `mode` column — single shared bucket.
+        await supabase.from('advisor_calls').insert({ user_id: user.id });
+        const r = await supabase.from('advisor_calls').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since);
+        count = r.count || 0;
+        if (count > RATE_MAX_PER_HOUR)
+          return json({ error: 'rate_limited', reply: "You've reached the hourly limit — let's give it a little breather and pick this up again soon." }, 429);
+      } else {
+        const q = supabase.from('advisor_calls').select('id', { count: 'exact', head: true }).eq('user_id', user.id).gte('created_at', since);
+        const r = isBg ? await q.eq('mode', 'describe') : await q.neq('mode', 'describe');
+        count = r.count || 0;
+        if (count > (isBg ? RATE_MAX_BG_PER_HOUR : RATE_MAX_PER_HOUR))
+          return json({ error: 'rate_limited', reply: isBg ? 'quiet hour for background blurbs' : "You've reached the hourly limit — let's give it a little breather and pick this up again soon." }, 429);
+      }
     } catch (_e) { /* advisor_calls table not created yet — skip limiting */ }
 
     const name = profile?.display_name || 'the reader';

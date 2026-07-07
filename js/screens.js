@@ -452,13 +452,14 @@ export function BookDetail({ id }) {
     setGenDesc(null); setConfirmRm(false);
     if (advisorReady() && b && b.title) {
       const fetchGen = () => advisorDescribe({ title: b.title, author: b.author || '' }).then((d) => { if (alive) { setGenDesc(d); if (d) persistDescription(id, d); } }).catch(() => {});
+      const wantGen = !b.description && !b.descMissing; // don't re-ask Claude about books it's confirmed it doesn't know
       advisorEnrich({ title: b.title, author: b.author || '' }).then((e) => {
         if (!alive) return;
         setEnrich(e);
         if (e && e.coverUrl) persistCover(id, e.coverUrl); // correct wrong-language covers everywhere
         if (e && e.description) { if (!b.description) persistDescription(id, e.description); }
-        else if (!b.description) fetchGen(); // no Google synopsis and none cached → ask Mabel
-      }).catch(() => { if (!b.description) fetchGen(); });
+        else if (wantGen) fetchGen(); // no Google synopsis and none cached → ask Mabel
+      }).catch(() => { if (wantGen) fetchGen(); });
     }
     return () => { alive = false; };
   }, [id]);

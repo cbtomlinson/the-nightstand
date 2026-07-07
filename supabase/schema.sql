@@ -323,8 +323,11 @@ alter table public.shelf_items add column if not exists libby_hold   boolean def
 create table if not exists public.advisor_calls (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid not null references auth.users(id) on delete cascade,
+  mode       text not null default 'chat', -- chat/recommend (interactive) vs describe (background)
   created_at timestamptz default now()
 );
+-- Existing databases: add the column so the two rate-limit buckets can split.
+alter table public.advisor_calls add column if not exists mode text not null default 'chat';
 create index if not exists advisor_calls_user_time
   on public.advisor_calls (user_id, created_at desc);
 alter table public.advisor_calls enable row level security;
