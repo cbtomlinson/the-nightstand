@@ -277,6 +277,7 @@ export function Shelf({ tab: initialTab }) {
               <div class="book-title">${b.title}</div>
               <div class="book-author">${b.author}</div>
               ${tab === 'finished' && item.rating && html`<div class="mt-8"><${Stars} n=${item.rating} /></div>`}
+              ${tab === 'finished' && !item.rating && html`<div class="book-note">Not rated yet — tap to rate</div>`}
               ${tab === 'dnf' && html`<div class="book-note">${item.atPct ? 'Stopped at ' + item.atPct + '% · ' : ''}${item.reason || ''}</div>`}
               ${tab === 'to_read' && item.addedNote && html`<div class="book-note">“${item.addedNote}”</div>`}
               ${tab === 'reading' && html`<div class="mt-8"><${Progress} pct=${item.progress || 0} /></div>`}
@@ -1891,8 +1892,7 @@ function SearchResult({ b }) {
         ${[['to_read', 'TBR'], ['reading', 'Reading'], ['finished', 'Finished'], ['dnf', 'DNF']].map(([s, label]) =>
           html`<button class="tag" disabled=${busy} style=${shelfStatus === s ? 'background:var(--gold-soft);color:var(--gold);border-color:var(--gold)' : ''} onClick=${() => add(s)}>${shelfStatus === s ? html`<${Icon} name="check" /> ` : ''}${label}</button>`)}
       </div>
-      ${shelfStatus ? html`<p class="dim" style="font-size:11.5px;margin:8px 0 0">Tapped by accident? Tap the checked shelf again to remove it.</p>
-      <button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/shelf/' + shelfStatus)}><${Icon} name="books" /> Go to your shelf</button>` : ''}
+      ${shelfStatus ? html`<button class="btn btn-ghost btn-block mt-8" onClick=${() => existing ? go('/book/' + existing.bookId) : go('/shelf/' + shelfStatus)}><${Icon} name="book" /> Open it on your shelf${existing && shelfStatus === 'finished' ? ' — rate it, add notes' : ''}</button>` : ''}
       <div class="tagrow mt-8">
         <button class="tag" onClick=${() => shareBook({ title: b.title, author: b.author, coverUrl: cover })}><${Icon} name="send" /> Share</button>
         <a class="tag" href=${'https://www.google.com/search?q=' + encodeURIComponent(b.title + ' ' + (b.author || '') + ' book')} target="_blank" rel="noopener noreferrer"><${Icon} name="search" /> Info</a>

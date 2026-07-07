@@ -91,6 +91,14 @@ reactions. Keep it multi-tenant-friendly (no new owner-specific hardcoding).
   intercepted; registration is post-`load` with `updateViaCache:'none'`. **No cache-bump
   discipline needed** — content flows network-first; bump `CACHE` only on strategy changes.
   This closes the recurring **"stale cache / old code for 10 minutes"** trap.
+- ⏳ **Offline shelf snapshot** _(queued 2026-07-06 — Chelsea: "add that to the backlog for now")._
+  The SW makes the app *open* offline, but shelves still need the network (boot fetch fails →
+  error screen). Plan: persist the last-synced store (`booksById` + `shelves` + `me`) to
+  localStorage on every `refresh()`; on boot, hydrate from the snapshot first, then let the
+  network refresh replace it — if the fetch fails and a snapshot exists, show shelves read-only
+  with a soft "showing your last synced library" banner. Writes fail politely offline; Mabel /
+  feed / friends stay online-only. Nice-to-have later: SW-cache cover images (cross-origin,
+  opaque responses) so covers show in airplane mode too.
 
 ## Enhancements (discussed, not built — 2026-06-28)
 - ✅ **"Where to find it" deep links** _(shipped 2026-06-29 — Option 1, the check row)._ Chips stay
