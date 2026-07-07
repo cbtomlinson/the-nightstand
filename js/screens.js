@@ -216,6 +216,9 @@ export function Shelf({ tab: initialTab }) {
   const st = useStore();
   const [tab, setTab] = useState(['reading', 'to_read', 'finished', 'dnf'].includes(initialTab) ? initialTab : 'to_read');
   const [sortBy, setSortBy] = useState('added'); // added | title | author | libby | avail
+  // Keep the active shelf in the URL (no history entry) so opening a book and
+  // hitting Back returns to the shelf you were on, not the default (TBR).
+  const selectTab = (k) => { setTab(k); history.replaceState(null, '', '#/shelf/' + k); };
 
   if (!st.ready) {
     return html`<div class="screen"><div class="empty mt-20"><${Icon} name="books" /><div>Opening your shelves…</div></div></div>`;
@@ -248,7 +251,7 @@ export function Shelf({ tab: initialTab }) {
     <div class="section-head"><span class="section-title">Your shelves</span><button class="section-link" style="background:none;border:0;cursor:pointer" onClick=${() => go('/search')}>+ Add a book</button></div>
     <div class="seg">
       ${[['reading', 'Reading'], ['to_read', 'TBR'], ['finished', 'Finished'], ['dnf', 'DNF']].map(
-        ([k, label]) => html`<button class=${'seg-item' + (tab === k ? ' active' : '')} onClick=${() => setTab(k)}>${label}</button>`
+        ([k, label]) => html`<button class=${'seg-item' + (tab === k ? ' active' : '')} onClick=${() => selectTab(k)}>${label}</button>`
       )}
     </div>
 
