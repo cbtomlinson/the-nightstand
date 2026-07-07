@@ -288,6 +288,90 @@ export function Shelf({ tab: initialTab }) {
   </div>`;
 }
 
+/* ---------------- Tidy up duplicates ---------------- */
+// Normalize a title so look-alikes collapse: drop subtitle after a colon,
+// series parentheticals, punctuation, a leading article, and case. This is
+// what lets "The Midnight Library" and "The Midnight Library: A Novel" match.
+function normTitle(s) {
+  return (s || '')
+    .toLowerCase()
+    .split(':')[0]                 // "title: a novel" → "title"
+    .replace(/\([^)]*\)/g, ' ')    // "(the series, #1)"
+    .replace(/[^a-z0-9]+/g, ' ')   // punctuation → space
+    .replace(/^(the|a|an)\s+/, '') // leading article
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// "2026-06-09" → "Jun 9, 2026" without the UTC-parse day-shift.
+function prettyDay(s) {
+  if (!s) return '';
+  const [y, m, d] = String(s).split('-').map(Number);
+  if (!y || !m || !d) return '';
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+export function Tidy() {
+  const st = useStore();
+  const [busy, setBusy] = useState(null); // id of the copy being removed
+
+  if (!st.ready) return html`<div class="screen"><div class="empty mt-20"><${Icon} name="books" /><div>Opening your shelves…</div></div></div>`;
+
+  // Group every shelf item (across all four shelves) by normalized title.
+  const groups = {};
+  for (const shelf of ['reading', 'to_read', 'finished', 'dnf']) {
+    for (const item of st.shelves[shelf] || []) {
+      const b = st.booksById[item.bookId];
+      if (!b) continue;
+      const key = normTitle(b.title);
+      if (!key) continue;
+      (groups[key] || (groups[key] = [])).push({ item, b, shelf });
+    }
+  }
+  const dupes = Object.values(groups)
+    .filter((g) => g.length > 1)
+    .sort((a, b) => a[0].b.title.localeCompare(b[0].b.title));
+
+  const remove = async (id) => {
+    setBusy(id);
+    try { await removeFromShelf(id); toast('Removed'); }
+    catch { toast('Could not remove — try again'); }
+    setBusy(null);
+  };
+
+  const pillCls = { reading: 'pill-teal', to_read: 'pill-lilac', finished: 'pill-gold', dnf: 'pill-rose' };
+  const label = { reading: 'Reading', to_read: 'TBR', finished: 'Finished', dnf: 'DNF' };
+  const detail = ({ item, shelf }) => {
+    if (shelf === 'finished') return item.finishedAt ? 'Read ' + prettyDay(item.finishedAt) : 'Finished';
+    if (shelf === 'reading') return (item.progress ? item.progress + '% in' : 'In progress');
+    if (shelf === 'dnf') return 'Set aside' + (item.atPct ? ' at ' + item.atPct + '%' : '');
+    return 'On your TBR';
+  };
+
+  return html`<div class="screen">
+    <button class="back-btn" onClick=${() => history.back()}><${Icon} name="chevleft" /> Back</button>
+    <div class="screen-title">Tidy up duplicates</div>
+    <div class="screen-sub">Same book on your shelf twice? Keep the copy you want and remove the other.</div>
+
+    ${dupes.length === 0
+      ? html`<div class="empty mt-20"><${Icon} name="check" /><div>No duplicates — your shelves are tidy. ✨</div></div>`
+      : html`<p class="dim" style="font-size:12.5px;margin:8px 0 4px">${dupes.length} possible duplicate${dupes.length === 1 ? '' : 's'}. Removing just unshelves that copy — the one you keep stays exactly as it is.</p>
+        ${dupes.map((g) => html`<div class="card mt-12">
+          ${g.map(({ item, b, shelf }) => html`<div class="book-row" style="cursor:default">
+            <div onClick=${() => go('/book/' + b.id)} role="button" style="display:flex;gap:12px;flex:1;min-width:0;cursor:pointer">
+              <${BookCover} book=${b} />
+              <div class="book-meta">
+                <div class="book-title">${b.title}</div>
+                <div class="book-author">${b.author || 'Unknown author'}</div>
+                <div class="mt-8"><span class=${'pill ' + pillCls[shelf]}>${label[shelf]}</span> <span class="dim" style="font-size:12px">· ${detail({ item, shelf })}</span></div>
+              </div>
+            </div>
+            <button class="btn btn-ghost" style="padding:7px 12px;font-size:13px;color:var(--danger);flex:none" disabled=${busy === item.id} onClick=${() => remove(item.id)}>${busy === item.id ? '…' : 'Remove'}</button>
+          </div>`)}
+        </div>`)}`}
+  </div>`;
+}
+
 /* ---------------- Rated books (from Profile stats) ---------------- */
 export function RatedList({ min }) {
   const st = useStore();
@@ -1235,6 +1319,7 @@ export function Profile() {
     </div>` : ''}
 
     <button class="btn btn-ghost btn-block mt-20" onClick=${() => go('/import')}><${Icon} name="arrow" /> Import from Goodreads / StoryGraph</button>
+    <button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/tidy')}><${Icon} name="books" /> Find duplicate books</button>
     ${me.isOwner ? html`<button class="btn btn-ghost btn-block mt-12" onClick=${() => go('/admin')}><${Icon} name="users" /> Admin console</button>` : ''}
 
     ${me.email ? html`<p class="dim" style="font-size:11.5px;text-align:center;margin:18px 0 0">Signed in as ${me.email}</p>` : ''}
@@ -1861,6 +1946,7 @@ export function Import() {
         ${busy && html`<${Progress} pct=${prog && prog.total ? Math.round(prog.done / prog.total * 100) : 0} />`}
         ${done && html`<div class="rec-line good mt-12"><${Icon} name="sparkles" /><span>Added <b>${done.added}</b> book${done.added === 1 ? '' : 's'}${done.failed ? ` · ${done.failed} skipped` : ''}. Covers are filling in now.</span></div>`}
         ${done && html`<button class="btn btn-block mt-12" onClick=${() => go('/shelf')}><${Icon} name="books" /> Go to your shelves</button>`}
+        ${done && html`<button class="btn btn-ghost btn-block mt-8" onClick=${() => go('/tidy')}><${Icon} name="books" /> Check for duplicates</button>`}
       </div>`}
     </div>
 
