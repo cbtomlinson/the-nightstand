@@ -226,8 +226,8 @@ async function loadAuthorMap() {
   if (authorMap !== undefined) return authorMap;
   try {
     const res = await fetch('data/kindle-authors.json');
-    authorMap = res.ok ? await res.json() : null;
-  } catch (_e) { authorMap = null; }
+    authorMap = res.ok ? await res.json() : undefined; // undefined → retry next pass
+  } catch (_e) { authorMap = undefined; }
   return authorMap;
 }
 async function backfillAuthors(booksById) {
@@ -237,6 +237,7 @@ async function backfillAuthors(booksById) {
   backfillingAuthors = true;
   try {
     const map = await loadAuthorMap();
+    if (!map) return; // transient fetch failure — leave books unmarked so the next refresh retries
     for (let i = 0; i < missing.length; i += 4) {
       await Promise.all(missing.slice(i, i + 4).map(async (b) => {
         authorTried.add(b.id);
