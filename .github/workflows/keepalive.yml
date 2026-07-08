@@ -14,17 +14,10 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase auth health
+      - name: Ping Supabase auth health (API-gateway traffic the pause detector counts)
         run: |
           code=$(curl -s -o /dev/null -w "%{http_code}" \
             "https://qtinnaugpjhjsdmnltip.supabase.co/auth/v1/health" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}")
           echo "auth health: $code"
-          [ "$code" = "200" ] || exit 1
-      - name: Ping REST gateway (the traffic the pause detector counts)
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            "https://qtinnaugpjhjsdmnltip.supabase.co/rest/v1/" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}")
-          echo "rest gateway: $code"
           [ "$code" = "200" ] || exit 1
